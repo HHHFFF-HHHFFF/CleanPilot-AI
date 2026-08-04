@@ -1,5 +1,4 @@
 import os
-
 from langchain_core.tools import tool
 from rag.rag_service import RagSummarizeService
 from utils.config_handler import agent_config
@@ -9,12 +8,12 @@ import random
 
 rag = RagSummarizeService()
 
-user_ids = ["1001","1002","1003","1004","1005","1006","1007","1008","1009","1010","1011","1012","1013"]
+user_ids = ["1001","1002","1003","1004","1005","1006","1007","1008","1009","1010"]
 month_arr = ["2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12"]
 
 external_data = {}
 
-@tool(description="从向量存储中检索参考资料")
+@tool(description="从向量存储中检索参考资料并结合用户提问概括回答")
 def rag_summarize(query:str) -> str:
     return rag.rag_summarize(query)
 
@@ -94,3 +93,7 @@ def fetch_external_data(user_id:str, month:str) -> str:
         return external_data[user_id][month]
     except KeyError:
         logger.warning(f"[fetch_external_data]未检索到用户：{user_id}在{month}的使用记录数据")
+
+@tool(description="无入参，无返回值，调用后触发中间件自动为报告生成的场景动态注入上下文信息，为后续提示词切换提供上下文信息")
+def fill_context_for_report():
+    return "fill_context_for_report已调用"
