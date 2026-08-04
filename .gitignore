@@ -13,10 +13,6 @@ chroma_db/
 logs/
 md5.text
 
-# Local knowledge documents
-data/*
-!data/README.md
-
 # IDE and logs
 .idea/
 .vscode/

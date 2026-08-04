@@ -54,7 +54,7 @@ rag/vector_store.py
 rag/rag_service.py
 ```
 
-首次使用前，请将自己的 `.txt` 或 `.pdf` 文档放入 `data/`。支持类型和切分参数可在 `config/chroma.yml` 中调整。
+仓库包含扫地机器人知识库示例。你也可以将自己的 `.txt` 或 `.pdf` 文档放入 `data/`；支持类型和切分参数可在 `config/chroma.yml` 中调整。
 
 ## 配置说明
 
@@ -69,7 +69,7 @@ rag/rag_service.py
 
 ```text
 ├── config/             # 模型、向量库和提示词配置
-├── data/               # 本地知识文档（不提交原始内容）
+├── data/               # 扫地机器人知识库示例
 ├── model/              # 通义千问模型与 Embeddings 工厂
 ├── prompts/            # Prompt 模板
 ├── rag/                # 知识入库、检索和 RAG 服务
@@ -79,7 +79,7 @@ rag/rag_service.py
 
 ## 本地运行数据
 
-以下文件包含本地状态或潜在业务数据，已由 `.gitignore` 排除：
+以下文件包含本地运行状态，已由 `.gitignore` 排除：
 
 - `data/*`：原始知识文档
 - `chroma_db/`：本地向量数据库
