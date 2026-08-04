@@ -5,5 +5,6 @@ langchain-chroma==1.1.0
 langchain-community==0.4.2
 langchain-core==1.5.2
 langchain-text-splitters==1.1.2
+langgraph==1.2.10
 pypdf>=5,<7
 PyYAML>=6,<7
