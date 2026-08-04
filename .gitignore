@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+
+# Secrets
+.env
+.streamlit/secrets.toml
+
+# Local application state
+chroma_db/
+logs/
+md5.text
+
+# Local knowledge documents
+data/*
+!data/README.md
+
+# IDE and logs
+.idea/
+.vscode/
+*.log
