@@ -37,5 +37,5 @@ class ReactAgent:
 if __name__ == '__main__':
     agent = ReactAgent()
 
-    for chunk in agent.execute_stream("请给我生成使用报告"):
+    for chunk in agent.execute_stream("独居老人适合用哪种型号的机器人"):
         print(chunk, end="", flush=True)
