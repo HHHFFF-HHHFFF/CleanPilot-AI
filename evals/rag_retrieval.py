@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol, Sequence
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CASES_PATH = Path(__file__).with_name("rag_cases.json")
+DEFAULT_REPORT_PATH = PROJECT_ROOT / "evals" / "reports" / "retrieval_report.json"
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 class Retriever(Protocol):
@@ -134,7 +140,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="运行 Chroma RAG 检索评测")
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES_PATH, help="评测集 JSON 路径")
     parser.add_argument("--k", type=int, default=None, help="检索 Top-K；默认使用 Chroma 配置")
-    parser.add_argument("--report", type=Path, default=Path("evals/reports/retrieval_report.json"), help="报告输出路径")
+    parser.add_argument("--report", type=Path, default=DEFAULT_REPORT_PATH, help="报告输出路径")
     args = parser.parse_args()
 
     from rag.vector_store import VectorStoreService

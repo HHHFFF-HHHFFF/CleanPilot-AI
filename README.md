@@ -107,6 +107,8 @@ python -m evals.rag_retrieval
 python -m evals.rag_retrieval --k 5 --report evals/reports/retrieval_report.json
 ```
 
+请始终在项目根目录运行上述命令；评测脚本会固定使用项目根目录的 `chroma_db/`。如果报告中所有 `retrieved_sources` 都为空，先检查是否误在 `evals/` 目录中直接运行脚本，导致打开了错误的空数据库。
+
 报告会输出以下指标：
 
 - **Recall@K**：每个问题的 Top-K 检索结果中，是否至少包含一个预期知识文件；适合监控“资料有没有被找回来”。
