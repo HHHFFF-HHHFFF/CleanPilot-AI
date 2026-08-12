@@ -1,4 +1,4 @@
-"""Evaluate the RAG retriever with a labelled source-level dataset."""
+"""使用标注的源级别数据集对 RAG 检索器进行评估。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 class Retriever(Protocol):
     def invoke(self, query: str) -> Sequence[Any]:
-        """Return documents for a query."""
+        """返回查询文件结果。"""
 
 
 @dataclass(frozen=True)
@@ -41,7 +41,9 @@ class CaseResult:
 
 
 def load_cases(path: str | Path = DEFAULT_CASES_PATH) -> list[RetrievalCase]:
-    """Load and validate source-level retrieval evaluation cases."""
+    """
+    加载并验证源代码级检索评估案例
+    """
     with Path(path).open("r", encoding="utf-8") as file:
         raw_cases = json.load(file)
 
@@ -80,7 +82,7 @@ def load_cases(path: str | Path = DEFAULT_CASES_PATH) -> list[RetrievalCase]:
 
 
 def source_name(document: Any) -> str:
-    """Normalize a LangChain document source to its file name."""
+    """将LangChain文档源规范化为其文件名。"""
     metadata = getattr(document, "metadata", {})
     if not isinstance(metadata, dict):
         return ""
@@ -89,7 +91,7 @@ def source_name(document: Any) -> str:
 
 
 def evaluate_retrieval(cases: Sequence[RetrievalCase], retriever: Retriever) -> list[CaseResult]:
-    """Calculate source-level hit results and reciprocal ranks for each case."""
+    """计算每个案例的源级命中结果和互逆排名。"""
     results: list[CaseResult] = []
     for case in cases:
         retrieved_sources = tuple(
@@ -114,7 +116,7 @@ def evaluate_retrieval(cases: Sequence[RetrievalCase], retriever: Retriever) -> 
 
 
 def summarize_results(results: Sequence[CaseResult], k: int) -> dict[str, float | int]:
-    """Return Recall@K and MRR for the evaluated cases."""
+    """返回所评估案例的Recall@K和MRR值。"""
     if not results:
         raise ValueError("评测结果为空")
 
@@ -128,7 +130,7 @@ def summarize_results(results: Sequence[CaseResult], k: int) -> dict[str, float 
 
 
 def build_report(results: Sequence[CaseResult], k: int) -> dict[str, Any]:
-    """Build a serializable evaluation report with failed cases first."""
+    """首先构建一份包含失败用例的可序列化评估报告。"""
     return {
         "summary": summarize_results(results, k),
         "failed_cases": [asdict(result) for result in results if not result.hit],
