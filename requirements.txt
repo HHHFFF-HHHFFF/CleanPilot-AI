@@ -13,3 +13,4 @@ streamlit==1.60.0
 
 streamlit-js-eval==1.0.0
 requests>=2.31,<3
+pytest>=8,<9

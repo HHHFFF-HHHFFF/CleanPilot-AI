@@ -89,6 +89,31 @@ python -m streamlit run app.py
 | `fetch_external_data` | 从 CSV 查询模拟用户使用记录 |
 | `fill_context_for_report` | 切换报告生成场景的提示词上下文 |
 
+## 测试与 RAG 评测
+
+项目提供两类质量保障：
+
+- **离线单元测试**：覆盖评测集格式、来源路径归一化、Recall@K 与 MRR 计算。不会调用通义千问、Chroma 或天气服务。
+- **真实检索评测**：使用 `evals/rag_cases.json` 中的标注问题，检查 Chroma 返回的 Top-K 文档是否包含预期知识文件。此步骤会调用 Embedding 服务，但不会调用聊天模型。
+
+```powershell
+# 运行离线单元测试
+python -m pytest
+
+# 运行真实 Chroma 检索评测，默认使用 config/chroma.yml 的 k 值
+python -m evals.rag_retrieval
+
+# 指定 Top-5 检索并覆盖报告输出位置
+python -m evals.rag_retrieval --k 5 --report evals/reports/retrieval_report.json
+```
+
+报告会输出以下指标：
+
+- **Recall@K**：每个问题的 Top-K 检索结果中，是否至少包含一个预期知识文件；适合监控“资料有没有被找回来”。
+- **MRR**：首个正确知识文件的平均倒数排名；数值越高，说明正确资料通常越靠前。
+
+初始评测集包含 15 条覆盖选购、维护、故障与扫拖场景的用例。新增或修改知识库后，应补充对应问题和预期来源文件，再观察指标变化。
+
 ## 前端交互说明
 
 1. 打开页面后，根据浏览器提示决定是否授权位置访问。

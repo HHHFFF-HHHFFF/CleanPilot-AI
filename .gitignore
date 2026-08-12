@@ -17,3 +17,4 @@ md5.text
 .idea/
 .vscode/
 *.log
+evals/reports/

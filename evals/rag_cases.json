@@ -1,0 +1,77 @@
+[
+  {
+    "id": "purchase-small-home",
+    "query": "独居小户型选扫地机器人时最该关注什么？",
+    "expected_sources": ["选购指南.txt"]
+  },
+  {
+    "id": "purchase-pet-home",
+    "query": "养猫家庭购买扫地机器人应该重点看哪些功能？",
+    "expected_sources": ["选购指南.txt"]
+  },
+  {
+    "id": "purchase-under-sofa",
+    "query": "沙发底只有八厘米高，如何选择能进去清扫的机器人？",
+    "expected_sources": ["选购指南.txt"]
+  },
+  {
+    "id": "purchase-carpet",
+    "query": "家里有地毯，扫地机器人的吸力和功能应该怎么选？",
+    "expected_sources": ["选购指南.txt"]
+  },
+  {
+    "id": "faq-wifi",
+    "query": "APP 连不上扫地机器人，应该如何排查 WiFi？",
+    "expected_sources": ["扫地机器人100问2.txt", "故障排除.txt"]
+  },
+  {
+    "id": "faq-charging-dock",
+    "query": "机器人找不到充电座时应该怎么处理？",
+    "expected_sources": ["扫地机器人100问2.txt", "故障排除.txt"]
+  },
+  {
+    "id": "faq-water-stain",
+    "query": "拖地后地板上留下水痕，如何解决？",
+    "expected_sources": ["扫地机器人100问2.txt", "扫拖一体机器人100问.txt", "故障排除.txt"]
+  },
+  {
+    "id": "faq-hair-cleaning",
+    "query": "主刷缠了很多头发，应该如何清理？",
+    "expected_sources": ["扫地机器人100问2.txt", "维护保养.txt"]
+  },
+  {
+    "id": "faq-mop-water",
+    "query": "扫拖一体机器人拖地时不出水怎么排查？",
+    "expected_sources": ["扫拖一体机器人100问.txt", "故障排除.txt"]
+  },
+  {
+    "id": "faq-carpet-no-mop",
+    "query": "地毯区域不想拖地，APP 里应该怎么设置？",
+    "expected_sources": ["扫拖一体机器人100问.txt"]
+  },
+  {
+    "id": "maintenance-sensors",
+    "query": "日常如何保养机器人的防跌落和避障传感器？",
+    "expected_sources": ["维护保养.txt"]
+  },
+  {
+    "id": "maintenance-storage",
+    "query": "扫地机器人长时间不用，电池应该怎样存放？",
+    "expected_sources": ["扫地机器人100问2.txt"]
+  },
+  {
+    "id": "troubleshoot-low-suction",
+    "query": "机器人的吸力明显下降，需要检查哪些部位？",
+    "expected_sources": ["故障排除.txt", "维护保养.txt"]
+  },
+  {
+    "id": "troubleshoot-no-move",
+    "query": "扫地机器人不移动或者移动很慢，可能是什么问题？",
+    "expected_sources": ["扫地机器人100问2.txt", "故障排除.txt"]
+  },
+  {
+    "id": "troubleshoot-map",
+    "query": "机器人建图不完整、地图错乱，如何恢复？",
+    "expected_sources": ["扫地机器人100问2.txt", "故障排除.txt"]
+  }
+]
