@@ -4,6 +4,7 @@ import streamlit as st
 from streamlit_js_eval import get_geolocation
 
 from agent.react_agent import ReactAgent
+from ui.knowledge_base import render_knowledge_base_page
 from utils.location_weather import extract_coordinates, format_weather, get_location_weather
 
 AGENT_RUNTIME_VERSION = "structured_stream_v2"
@@ -36,6 +37,11 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+page = st.sidebar.radio("工作台", ["智能客服", "知识库运营"])
+if page == "知识库运营":
+    render_knowledge_base_page()
+    st.stop()
 
 
 def render_trace(trace_steps: list[str], placeholder=None):

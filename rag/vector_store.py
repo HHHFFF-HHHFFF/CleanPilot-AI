@@ -1,107 +1,86 @@
-import os
+from __future__ import annotations
 
-from langchain_core.documents import Document
+from pathlib import Path
+from typing import Sequence
 
-from utils.file_handler import txt_loader, pdf_loader, listdir_with_allowed_type, get_file_md5_hex
 from langchain_chroma import Chroma
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from utils.logger_handler import logger
-from utils.path_tool import get_abs_path
-from utils.config_handler import chroma_config
 from model.factory import embed_model
+from utils.config_handler import chroma_config
+from utils.file_handler import pdf_loader, txt_loader
+from utils.path_tool import get_abs_path
+
 
 class VectorStoreService:
+    """Chroma access and document chunk operations used by the knowledge service."""
+
     def __init__(self):
         self.vector_store = Chroma(
-            collection_name=chroma_config['collection_name'],
+            collection_name=chroma_config["collection_name"],
             embedding_function=embed_model,
-            persist_directory=get_abs_path(chroma_config['persist_directory']),
+            persist_directory=get_abs_path(chroma_config["persist_directory"]),
         )
-        self.spliter = RecursiveCharacterTextSplitter(
-            chunk_size=chroma_config['chunk_size'],
-            chunk_overlap=chroma_config['chunk_overlap'],
-            separators=chroma_config['separators'],
-            length_function=len
+        self.splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chroma_config["chunk_size"],
+            chunk_overlap=chroma_config["chunk_overlap"],
+            separators=chroma_config["separators"],
+            length_function=len,
         )
 
     def get_retriever(self):
-        return self.vector_store.as_retriever(search_kwargs = {"k":chroma_config['k']})
+        return self.vector_store.as_retriever(search_kwargs={"k": chroma_config["k"]})
+
+    def prepare_document_chunks(self, source_path: str | Path, document_id: str) -> list[Document]:
+        source = Path(source_path).resolve()
+        documents = self._load_documents(source)
+        if not documents:
+            raise ValueError(f"知识文件没有可用文本：{source.name}")
+
+        chunks = self.splitter.split_documents(documents)
+        if not chunks:
+            raise ValueError(f"知识文件切分后没有可用片段：{source.name}")
+
+        for chunk in chunks:
+            chunk.metadata.update(
+                {
+                    "document_id": document_id,
+                    "source": str(source),
+                    "source_name": source.name,
+                }
+            )
+        return chunks
+
+    def add_documents_in_batches(self, documents: Sequence[Document], batch_size: int = 16) -> None:
+        for start_index in range(0, len(documents), batch_size):
+            self.vector_store.add_documents(list(documents[start_index : start_index + batch_size]))
+
+    def get_source_chunk_count(self, source_path: str | Path) -> int:
+        source = str(Path(source_path).resolve())
+        result = self.vector_store.get(where={"source": source}, include=[])
+        return len(result.get("ids", []))
+
+    def delete_document(self, *, document_id: str, source_path: str | Path) -> None:
+        self.vector_store.delete(where={"document_id": document_id})
+        self.vector_store.delete(where={"source": str(Path(source_path).resolve())})
 
     def load_document(self):
-        """
-        从数据文件夹内读取数据文件，转为向量存入向量数据库
-        要计算md5做去重
-        :return: None
-        """
+        """Backward-compatible command-line entry point for knowledge synchronization."""
+        from rag.knowledge_service import KnowledgeBaseService
 
-        def check_md5_hex(md5_for_check:str):
-            if not os.path.exists(get_abs_path(chroma_config["md5_hex_store"])):
-                open(get_abs_path(chroma_config["md5_hex_store"]), "w", encoding="utf-8").close()
-                return False
+        return KnowledgeBaseService(self).synchronize_existing_documents()
 
-            with open(get_abs_path(chroma_config["md5_hex_store"]), "r", encoding="utf-8") as f:
-                for line in f.readlines():
-                    line = line.strip()
-                    if line == md5_for_check:
-                        return True
-                return False
+    @staticmethod
+    def _load_documents(source: Path) -> list[Document]:
+        if source.suffix.lower() == ".txt":
+            return txt_loader(str(source))
+        if source.suffix.lower() == ".pdf":
+            return pdf_loader(str(source))
+        raise ValueError(f"不支持的知识文件类型：{source.suffix}")
 
-        def save_md5_hex(md5_for_check:str):
-            with open(get_abs_path(chroma_config["md5_hex_store"]), "a", encoding="utf-8") as f:
-                f.write(md5_for_check + "\n")
 
-        def get_file_documents(read_path:str):
-            if read_path.endswith("txt"):
-                return txt_loader(read_path)
-
-            elif read_path.endswith("pdf"):
-                return pdf_loader(read_path)
-
-            else:
-                return []
-
-        allowed_file_path = listdir_with_allowed_type(
-            get_abs_path(chroma_config["data_path"]),
-            tuple(chroma_config["allow_knowledge_file_type"]),
-        )
-
-        for path in allowed_file_path:
-            md5_hex = get_file_md5_hex(path)
-            if check_md5_hex(md5_hex):
-                logger.info(f"[加载知识库]{path}内容已存在，跳过")
-                continue
-
-            try:
-                documents:list[Document] = get_file_documents(path)
-
-                if not documents:
-                    logger.warning(f"[加载知识库]{path}内没有有效文本内容，跳过")
-                    continue
-
-                split_document:list[Document] = self.spliter.split_documents(documents)
-
-                if not split_document:
-                    logger.warning(f"[加载知识库]{path}分片后没有有效文本内容，跳过")
-                    continue
-
-                #将内容存入向量数据库
-                self.vector_store.add_documents(split_document)
-
-                #记录加载好的文件md5，防止下次重复加载
-                save_md5_hex(md5_hex)
-
-                logger.info(f"[加载知识库]{path}内容加载成功")
-            except Exception as e:
-                #exc_info为True会记录更详细的报错堆栈，如果为False则仅记录报错信息本身
-                logger.error(f"[]{path}加载失败：{str(e)}", exc_info=True)
-                continue
-
-if __name__ == '__main__':
-    vs = VectorStoreService()
-    vs.load_document()
-    retriever = vs.get_retriever()
-    res = retriever.invoke("迷路")
-    for doc in res:
-        print(doc.page_content)
-        print("-"*20)
+if __name__ == "__main__":
+    records = VectorStoreService().load_document()
+    for record in records:
+        print(f"{record.filename}: {record.status} ({record.chunk_count} 个片段)")

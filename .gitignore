@@ -12,6 +12,8 @@ __pycache__/
 chroma_db/
 logs/
 md5.text
+data/support.db
+data/uploads/
 
 # IDE and logs
 .idea/

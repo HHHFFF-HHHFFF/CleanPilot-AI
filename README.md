@@ -77,6 +77,17 @@ python -m streamlit run app.py
 - 为获取城市与天气，授权后的经纬度会请求 OpenStreetMap Nominatim（城市反查）和 Open-Meteo（实时天气）。
 - 天气服务不可用时，界面会显示提示；Agent 会使用其余可用信息继续回答。
 
+## 知识库运营
+
+侧边栏的“知识库运营”页面提供面向运营人员的知识文件管理能力：
+
+- 同步并接管 `data/` 目录中已有的 TXT/PDF 与 Chroma 索引状态；不会因已有片段而重复调用 Embedding。
+- 上传单个 TXT/PDF，限制文件类型和 10MB 大小，并在入库前扫描常见提示注入式指令。
+- 展示文件状态、片段数、风险等级和失败原因；支持单文件重新入库或仅从 Chroma 索引移除。
+- 采用 SQLite `data/support.db` 保存文件 Hash、状态和片段数；只有全部批次写入成功后才标记为“已入库”。网络失败时仅清理当前文件的半成品，不影响已成功文件。
+
+`data/support.db` 与 `data/uploads/` 是本地运行数据，默认不提交到仓库。项目内置知识文件应继续通过 Git 管理。
+
 ## Agent 工具
 
 | 工具 | 作用 |
@@ -146,7 +157,7 @@ python -m evals.rag_retrieval --k 5 --report evals/reports/retrieval_report.json
 
 ## 本地运行数据
 
-`chroma_db/`、`logs/` 和 `md5.text` 是本地运行状态，已由 `.gitignore` 排除。向量化会将 `data/` 中的文本发送至 DashScope Embedding 服务；仅处理你有权使用的内容。
+`chroma_db/`、`logs/`、`data/support.db` 和 `data/uploads/` 是本地运行状态，已由 `.gitignore` 排除。向量化会将 `data/` 中的文本发送至 DashScope Embedding 服务；仅处理你有权使用的内容。
 
 ## 后续方向
 
