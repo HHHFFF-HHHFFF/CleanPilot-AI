@@ -1,4 +1,4 @@
-"""Lightweight prompt-injection checks for uploaded knowledge documents."""
+"""用于上传知识文档的轻量级提示注入检测。"""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class InjectionScanResult:
 
 
 def scan_text_for_prompt_injection(text: str) -> InjectionScanResult:
-    """Flag instruction-like text embedded in untrusted knowledge documents."""
+    """标记不可信知识文档中疑似指令性质的文本。"""
     normalized_text = text.casefold()
     matches = tuple(pattern for pattern in SUSPICIOUS_PATTERNS if pattern.casefold() in normalized_text)
     return InjectionScanResult(risk_level="high" if matches else "none", matched_patterns=matches)

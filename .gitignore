@@ -1,21 +1,21 @@
-# Python
+# Python 缓存与虚拟环境
 __pycache__/
 *.py[cod]
 *.pyo
 .venv/
 
-# Secrets
+# 密钥文件
 .env
 .streamlit/secrets.toml
 
-# Local application state
+# 本地应用运行状态
 chroma_db/
 logs/
 md5.text
 data/support.db
 data/uploads/
 
-# IDE and logs
+# IDE 配置与日志
 .idea/
 .vscode/
 *.log

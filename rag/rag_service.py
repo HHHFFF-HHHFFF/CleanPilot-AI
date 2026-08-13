@@ -25,7 +25,6 @@ class RagSummarizeService(object):
         self.chain = self._init_chain()
 
     def _init_chain(self):
-        #chain = self.prompt_template | RunnableLambda(print_prompt) | self.model | StrOutputParser()
         chain = self.prompt_template | self.model | StrOutputParser()
         return chain
 

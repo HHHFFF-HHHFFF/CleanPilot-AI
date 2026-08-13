@@ -1,4 +1,4 @@
-"""Operational knowledge-base service with recoverable file-level ingestion."""
+"""支持按文件恢复的知识库运营服务。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 class KnowledgeBaseService:
-    """Manage document status, safe ingestion, retry and index removal."""
+    """管理文档状态、安全入库、重试与索引移除。"""
 
     def __init__(self, vector_store: "VectorStoreService", repository: SupportRepository | None = None):
         self.vector_store = vector_store
@@ -32,7 +32,7 @@ class KnowledgeBaseService:
         return self.repository.list_knowledge_documents()
 
     def synchronize_existing_documents(self) -> list[KnowledgeDocument]:
-        """Register existing Chroma data and index only files that are truly missing."""
+        """接管现有 Chroma 数据，仅为确实缺失的文件建立索引。"""
         records: list[KnowledgeDocument] = []
         for source_path in self._knowledge_files():
             content_hash = self._file_hash(source_path)

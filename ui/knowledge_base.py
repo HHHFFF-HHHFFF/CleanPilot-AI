@@ -1,4 +1,4 @@
-"""Knowledge-base operations view for Streamlit."""
+"""Streamlit 知识库运营页面。"""
 
 from __future__ import annotations
 

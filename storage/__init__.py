@@ -1,1 +1,1 @@
-"""Local persistence services for the customer support application."""
+"""智能客服应用的本地持久化服务。"""

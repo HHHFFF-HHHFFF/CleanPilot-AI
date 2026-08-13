@@ -14,7 +14,7 @@ from utils.path_tool import get_abs_path
 
 
 class VectorStoreService:
-    """Chroma access and document chunk operations used by the knowledge service."""
+    """为知识库服务提供 Chroma 访问与文档切片操作。"""
 
     def __init__(self):
         self.vector_store = Chroma(
@@ -66,7 +66,7 @@ class VectorStoreService:
         self.vector_store.delete(where={"source": str(Path(source_path).resolve())})
 
     def load_document(self):
-        """Backward-compatible command-line entry point for knowledge synchronization."""
+        """兼容旧版调用方式的知识库同步命令行入口。"""
         from rag.knowledge_service import KnowledgeBaseService
 
         return KnowledgeBaseService(self).synchronize_existing_documents()

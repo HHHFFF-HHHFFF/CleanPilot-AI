@@ -1,4 +1,4 @@
-"""Browser location parsing and current-weather lookups."""
+"""浏览器定位解析与实时天气查询。"""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ WEATHER_CODE_LABELS = {
 
 
 def extract_coordinates(raw_location: dict[str, Any] | None) -> tuple[float, float] | None:
-    """Extract latitude and longitude from streamlit-js-eval output."""
+    """从 streamlit-js-eval 的结果中提取经纬度。"""
     if not isinstance(raw_location, dict):
         return None
 
@@ -121,7 +121,7 @@ def _build_profile(city: str, latitude: float, longitude: float) -> dict[str, An
 
 
 def get_location_weather(latitude: float, longitude: float) -> dict[str, Any]:
-    """Resolve a browser coordinate to a city and current weather."""
+    """将浏览器坐标解析为城市与实时天气。"""
     try:
         city = _reverse_geocode_city(latitude, longitude)
     except requests.RequestException:
@@ -130,7 +130,7 @@ def get_location_weather(latitude: float, longitude: float) -> dict[str, Any]:
 
 
 def get_city_weather(city: str) -> dict[str, Any]:
-    """Resolve a city name and return its current weather."""
+    """解析城市名称并返回实时天气。"""
     normalized_city = city.strip()
     if not normalized_city:
         raise ValueError("请提供城市名称")
@@ -154,7 +154,7 @@ def get_city_weather(city: str) -> dict[str, Any]:
 
 
 def format_weather(profile: dict[str, Any]) -> str:
-    """Format weather data for the interface and Agent tools."""
+    """将天气数据格式化为前端与 Agent 工具可用的文本。"""
     return (
         f"{profile['city']}当前{profile['condition']}，气温{profile['temperature']}°C，"
         f"体感{profile['apparent_temperature']}°C，湿度{profile['humidity']}%，"

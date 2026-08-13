@@ -1,1 +1,1 @@
-"""Offline and integration evaluation utilities for the RAG pipeline."""
+"""RAG 链路的离线与集成评测工具。"""

@@ -1,4 +1,4 @@
-"""SQLite repository for knowledge-base operational state."""
+"""用于保存知识库运营状态和客服业务数据的 SQLite 仓储。"""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ class UsageRecord:
 
 
 class SupportRepository:
-    """Persist document ingestion state independently from Chroma metadata."""
+    """独立于 Chroma 元数据，持久化文档入库状态与业务数据。"""
 
     def __init__(self, database_path: str | Path | None = None):
         self.database_path = Path(database_path or get_abs_path("data/support.db"))
@@ -188,7 +188,7 @@ class SupportRepository:
             connection.execute("DELETE FROM knowledge_documents WHERE document_id = ?", (document_id,))
 
     def seed_business_data(self, csv_path: str | Path | None = None) -> None:
-        """Import non-sensitive demo users and monthly records only when the database is empty."""
+        """仅在数据库为空时导入非敏感演示用户与月度使用记录。"""
         seed_path = Path(csv_path or get_abs_path("data/external/records.csv"))
         if not seed_path.exists():
             raise FileNotFoundError(f"业务种子数据不存在：{seed_path}")

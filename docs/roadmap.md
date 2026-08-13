@@ -1,12 +1,12 @@
-# Delivery Roadmap
+# 交付路线图
 
-## Completed
+## 已完成
 
-- Knowledge-base operations: document status, upload, injection scan, retry, and index removal.
-- Business-data foundation: SQLite users, devices, and monthly usage records seeded from a versioned CSV.
+- 知识库操作：文档状态、上传、注入扫描、重试和索引移除。
+- 业务数据基础：从带版本号的 CSV 文件导入的 SQLite 用户、设备和月度使用记录。
 
-## Next
+## 下一步
 
-- Add ingestion jobs, audit logs, and content-owner review workflow.
-- Replace demo users with authenticated accounts and integrate a ticket/CRM system.
-- Add answer-quality evaluation, feedback collection, and production monitoring.
+- 添加数据导入任务、审计日志和内容所有者审核工作流。
+- 用经过身份验证的账户替换演示用户，并集成工单/CRM系统。
+- 添加答案质量评估、反馈收集和生产环境监控功能。
