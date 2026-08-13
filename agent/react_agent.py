@@ -80,9 +80,18 @@ class ReactAgent:
             middleware=[log_before_model, monitor_tool, report_prompt_switch],
         )
 
-    def execute_stream(self, query: str, location_profile: dict | None = None):
+    def execute_stream(
+        self,
+        query: str,
+        location_profile: dict | None = None,
+        user_id: str | None = None,
+    ):
         input_dict = {"messages": [{"role": "user", "content": query}]}
-        runtime_context = {"report": False, "location_profile": location_profile or {}}
+        runtime_context = {
+            "report": False,
+            "location_profile": location_profile or {},
+            "user_id": user_id or "",
+        }
         yield {
             "type": "trace",
             "content": "已理解问题，正在分析需要使用的知识、环境与用户信息。",

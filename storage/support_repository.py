@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import csv
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,23 @@ class KnowledgeDocument:
     failure_reason: str | None
     created_at: str
     updated_at: str
+
+
+@dataclass(frozen=True)
+class SupportUser:
+    user_id: str
+    display_name: str
+    city: str
+
+
+@dataclass(frozen=True)
+class UsageRecord:
+    user_id: str
+    month: str
+    feature: str
+    efficiency: str
+    consumables: str
+    comparison: str
 
 
 class SupportRepository:
@@ -52,6 +70,41 @@ class SupportRepository:
                     failure_reason TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    city TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS devices (
+                    device_id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    purchased_at TEXT NOT NULL,
+                    warranty_until TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(user_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS usage_records (
+                    user_id TEXT NOT NULL,
+                    month TEXT NOT NULL,
+                    feature TEXT NOT NULL,
+                    efficiency TEXT NOT NULL,
+                    consumables TEXT NOT NULL,
+                    comparison TEXT NOT NULL,
+                    PRIMARY KEY(user_id, month),
+                    FOREIGN KEY(user_id) REFERENCES users(user_id)
                 )
                 """
             )
@@ -133,6 +186,88 @@ class SupportRepository:
     def delete_knowledge_document(self, document_id: str) -> None:
         with self._connect() as connection:
             connection.execute("DELETE FROM knowledge_documents WHERE document_id = ?", (document_id,))
+
+    def seed_business_data(self, csv_path: str | Path | None = None) -> None:
+        """Import non-sensitive demo users and monthly records only when the database is empty."""
+        seed_path = Path(csv_path or get_abs_path("data/external/records.csv"))
+        if not seed_path.exists():
+            raise FileNotFoundError(f"业务种子数据不存在：{seed_path}")
+
+        with self._connect() as connection:
+            existing_count = connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+            if existing_count:
+                return
+
+            with seed_path.open("r", encoding="utf-8", newline="") as file:
+                for row in csv.DictReader(file):
+                    connection.execute(
+                        "INSERT OR IGNORE INTO users(user_id, display_name, city) VALUES (?, ?, ?)",
+                        (row["user_id"], row["display_name"], row["city"]),
+                    )
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO devices(device_id, user_id, model, purchased_at, warranty_until)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            row["device_id"],
+                            row["user_id"],
+                            row["device_model"],
+                            row["purchased_at"],
+                            row["warranty_until"],
+                        ),
+                    )
+                    connection.execute(
+                        """
+                        INSERT OR REPLACE INTO usage_records(
+                            user_id, month, feature, efficiency, consumables, comparison
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            row["user_id"],
+                            row["month"],
+                            row["feature"],
+                            row["efficiency"],
+                            row["consumables"],
+                            row["comparison"],
+                        ),
+                    )
+
+    def list_users(self) -> list[SupportUser]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT user_id, display_name, city FROM users ORDER BY user_id"
+            ).fetchall()
+        return [SupportUser(**dict(row)) for row in rows]
+
+    def get_user(self, user_id: str) -> SupportUser | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT user_id, display_name, city FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        return SupportUser(**dict(row)) if row else None
+
+    def get_device(self, user_id: str) -> dict[str, str] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT device_id, model, purchased_at, warranty_until
+                FROM devices WHERE user_id = ? ORDER BY purchased_at DESC LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_usage_record(self, user_id: str, month: str) -> UsageRecord | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT user_id, month, feature, efficiency, consumables, comparison
+                FROM usage_records WHERE user_id = ? AND month = ?
+                """,
+                (user_id, month),
+            ).fetchone()
+        return UsageRecord(**dict(row)) if row else None
 
     @staticmethod
     def serialize_document(document: KnowledgeDocument) -> dict[str, object]:

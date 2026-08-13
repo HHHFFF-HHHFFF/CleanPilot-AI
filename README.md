@@ -88,6 +88,12 @@ python -m streamlit run app.py
 
 `data/support.db` 与 `data/uploads/` 是本地运行数据，默认不提交到仓库。项目内置知识文件应继续通过 Git 管理。
 
+## 业务数据与演示用户
+
+- 首次运行会将 `data/external/records.csv` 中的非敏感演示数据导入本地 SQLite `data/support.db`；数据包含用户、设备和按月使用记录三类实体。
+- Streamlit 侧边栏可选择固定演示用户，所选用户 ID 通过 Agent 运行时上下文传递；`get_user_id` 不再随机生成，`fetch_external_data` 改为参数化 SQLite 查询。
+- 示例数据仅用于本地演示和测试，不包含真实个人信息。生产接入时应替换为经鉴权的账户、设备与工单数据源。
+
 ## Agent 工具
 
 | 工具 | 作用 |

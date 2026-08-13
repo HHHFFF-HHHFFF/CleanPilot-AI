@@ -1,89 +1,67 @@
-import os
-import random
+import json
+from datetime import date
 
 import requests
 from langchain_core.tools import tool
 
 from rag.rag_service import RagSummarizeService
+from storage.support_repository import SupportRepository
 from utils.config_handler import agent_config
 from utils.location_weather import format_weather, get_city_weather
-from utils.logger_handler import logger
 from utils.path_tool import get_abs_path
 
 rag = RagSummarizeService()
-
-user_ids = ["1001", "1002", "1003", "1004", "1005", "1006", "1007", "1008", "1009", "1010"]
-month_arr = [
-    "2025-01", "2025-02", "2025-03", "2025-04", "2025-05", "2025-06",
-    "2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12",
-]
-external_data = {}
+support_repository = SupportRepository()
+support_repository.seed_business_data(get_abs_path(agent_config["business_seed_path"]))
 
 
-@tool(description="从向量存储中检索参考资料并结合用户提问概括回答。")
+@tool(description="Search the vector knowledge base and summarize the relevant product guidance.")
 def rag_summarize(query: str) -> str:
     return rag.rag_summarize(query)
 
 
-@tool(description="获取指定城市的实时天气信息；城市名称应由用户提供或通过 get_user_location 获取。")
+@tool(description="Get live weather for a specified city.")
 def get_weather(city: str) -> str:
     try:
         return format_weather(get_city_weather(city))
     except (requests.RequestException, ValueError, KeyError, TypeError) as error:
-        return f"暂时无法获取{city}的实时天气：{error}"
+        return f"Unable to retrieve live weather for {city}: {error}"
 
 
-@tool(description="获取用户当前所在城市。仅在用户已授权浏览器位置访问时可用。")
+@tool(description="Get the current city from browser location after the user has granted permission.")
 def get_user_location() -> str:
-    return "用户尚未授权浏览器位置访问，无法获取当前城市。请提示用户授权定位或直接提供城市名称。"
+    return "Browser location permission is unavailable. Ask the user to grant permission or provide a city."
 
 
-@tool(description="获取用户的 ID，以纯字符串形式返回。")
+@tool(description="Get the current conversation user ID for personalized usage-record queries.")
 def get_user_id() -> str:
-    return random.choice(user_ids)
+    users = support_repository.list_users()
+    return users[0].user_id if users else ""
 
 
-@tool(description="获取当前月份，以纯字符串形式返回。")
+@tool(description="Get the current year and month in YYYY-MM format.")
 def get_current_month() -> str:
-    return random.choice(month_arr)
+    return date.today().strftime("%Y-%m")
 
 
-def generate_external_data():
-    if external_data:
-        return
-
-    external_data_path = get_abs_path(agent_config["external_data_path"])
-    if not os.path.exists(external_data_path):
-        raise FileNotFoundError(f"外部数据文件 {external_data_path} 不存在")
-
-    with open(external_data_path, "r", encoding="utf-8") as file:
-        for line in file.readlines()[1:]:
-            values = line.strip().split(",")
-            user_id = values[0].replace('"', "")
-            feature = values[1].replace('"', "")
-            efficiency = values[2].replace('"', "")
-            consumables = values[3].replace('"', "")
-            comparison = values[4].replace('"', "")
-            month = values[5].replace('"', "")
-
-            external_data.setdefault(user_id, {})[month] = {
-                "特征": feature,
-                "效率": efficiency,
-                "耗材": consumables,
-                "对比": comparison,
-            }
-
-
-@tool(description="从外部系统中获取用户使用记录；如未检索到则返回空字符串。")
+@tool(description="Query a user's device usage record for a specified month; return an empty string if unavailable.")
 def fetch_external_data(user_id: str, month: str) -> str:
-    generate_external_data()
-    try:
-        return external_data[user_id][month]
-    except KeyError:
-        logger.warning(f"[fetch_external_data] 未检索到用户 {user_id} 在 {month} 的使用记录数据")
+    record = support_repository.get_usage_record(user_id, month)
+    if record is None:
         return ""
+    return json.dumps(
+        {
+            "user_id": record.user_id,
+            "month": record.month,
+            "feature": record.feature,
+            "efficiency": record.efficiency,
+            "consumables": record.consumables,
+            "comparison": record.comparison,
+        },
+        ensure_ascii=False,
+    )
 
 
-@tool(description="无入参、无返回值；调用后触发报告场景的动态上下文注入。")
+@tool(description="Switch the agent into its structured usage-report prompt context.")
 def fill_context_for_report() -> str:
-    return "fill_context_for_report 已调用"
+    return "fill_context_for_report completed"

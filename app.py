@@ -4,10 +4,13 @@ import streamlit as st
 from streamlit_js_eval import get_geolocation
 
 from agent.react_agent import ReactAgent
+from storage.support_repository import SupportRepository
 from ui.knowledge_base import render_knowledge_base_page
+from utils.config_handler import agent_config
 from utils.location_weather import extract_coordinates, format_weather, get_location_weather
+from utils.path_tool import get_abs_path
 
-AGENT_RUNTIME_VERSION = "structured_stream_v2"
+AGENT_RUNTIME_VERSION = "structured_stream_v3"
 
 st.set_page_config(page_title="智扫通机器人智能客服", page_icon="🤖")
 st.title("智扫通机器人智能客服")
@@ -44,6 +47,21 @@ if page == "知识库运营":
     st.stop()
 
 
+support_repository = SupportRepository()
+support_repository.seed_business_data(get_abs_path(agent_config["business_seed_path"]))
+support_users = support_repository.list_users()
+if not support_users:
+    st.error("No demo user data is available.")
+    st.stop()
+
+selected_user = st.sidebar.selectbox(
+    "Demo user",
+    support_users,
+    format_func=lambda user: f"{user.display_name} ({user.user_id}) - {user.city}",
+)
+selected_device = support_repository.get_device(selected_user.user_id)
+
+
 def render_trace(trace_steps: list[str], placeholder=None):
     safe_steps = "<br>".join(html.escape(step) for step in trace_steps)
     trace_html = (
@@ -61,6 +79,15 @@ if st.session_state.get("agent_runtime_version") != AGENT_RUNTIME_VERSION:
     st.session_state["agent_runtime_version"] = AGENT_RUNTIME_VERSION
 if "message" not in st.session_state:
     st.session_state["message"] = []
+
+with st.container(border=True):
+    st.subheader("Current conversation user")
+    st.caption(f"{selected_user.display_name} · {selected_user.city} · ID: {selected_user.user_id}")
+    if selected_device:
+        device_columns = st.columns(3)
+        device_columns[0].metric("Device model", selected_device["model"])
+        device_columns[1].metric("Purchased", selected_device["purchased_at"])
+        device_columns[2].metric("Warranty until", selected_device["warranty_until"])
 
 raw_location = get_geolocation(component_key="browser_geolocation")
 coordinates = extract_coordinates(raw_location)
@@ -112,6 +139,7 @@ if prompt:
         response_stream = st.session_state["agent"].execute_stream(
             prompt,
             location_profile=st.session_state.get("location_profile"),
+            user_id=selected_user.user_id,
         )
         with st.chat_message("assistant"):
             trace_placeholder = st.empty()

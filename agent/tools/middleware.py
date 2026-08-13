@@ -29,6 +29,13 @@ def monitor_tool(
                 tool_call_id=request.tool_call["id"],
             )
 
+        user_id = request.runtime.context.get("user_id", "")
+        if tool_name == "get_user_id" and user_id:
+            return ToolMessage(
+                content=f"Current conversation user ID: {user_id}",
+                tool_call_id=request.tool_call["id"],
+            )
+
         result = handler(request)
         logger.info(f"[tool monitor] 工具 {tool_name} 调用成功")
 
