@@ -20,6 +20,7 @@ import { useLocationWeather, type LocationStatus } from "../hooks/useLocationWea
 import {
   ChevronIcon,
   ChatIcon,
+  DatabaseIcon,
   DeviceIcon,
   LocationIcon,
   LogoutIcon,
@@ -36,6 +37,7 @@ type ChatWorkspaceProps = {
   token: string;
   user: CurrentUser;
   onLogout: () => void;
+  onOpenKnowledgeBase?: () => void;
 };
 
 const QUICK_PROMPTS = [
@@ -135,7 +137,7 @@ function LocationCard({
   );
 }
 
-export function ChatWorkspace({ token, user, onLogout }: ChatWorkspaceProps) {
+export function ChatWorkspace({ token, user, onLogout, onOpenKnowledgeBase }: ChatWorkspaceProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage(user)]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -306,6 +308,11 @@ export function ChatWorkspace({ token, user, onLogout }: ChatWorkspaceProps) {
         <button type="button" className="new-chat-button" onClick={startNewConversation} disabled={isStreaming}>
           <NewChatIcon /> 新建会话
         </button>
+        {user.role === "admin" && onOpenKnowledgeBase && (
+          <button type="button" className="admin-nav-button" onClick={onOpenKnowledgeBase}>
+            <DatabaseIcon /> 知识库运营
+          </button>
+        )}
         <div className="history-heading"><span>最近会话</span><small>{conversations.length}</small></div>
         <nav className="conversation-list" aria-label="历史会话">
           {historyLoading && <div className="history-placeholder">正在读取会话…</div>}

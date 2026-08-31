@@ -67,3 +67,14 @@ export type ConversationDetail = {
     created_at: string;
   }>;
 };
+
+export type KnowledgeDocument = {
+  document_id: string;
+  filename: string;
+  status: "indexed" | "failed" | "blocked" | "removed" | string;
+  chunk_count: number;
+  risk_level: string;
+  failure_reason: string | null;
+  created_at: string;
+  updated_at: string;
+};

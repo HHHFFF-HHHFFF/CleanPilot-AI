@@ -75,3 +75,21 @@ class ConversationMessageResponse(BaseModel):
 class ConversationDetailResponse(BaseModel):
     conversation: ConversationSummaryResponse
     messages: list[ConversationMessageResponse]
+
+
+class KnowledgeDocumentResponse(BaseModel):
+    document_id: str
+    filename: str
+    status: str
+    chunk_count: int
+    risk_level: str
+    failure_reason: str | None
+    created_at: str
+    updated_at: str
+
+
+class KnowledgeUploadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str = Field(min_length=1, max_length=255)
+    content_base64: str = Field(min_length=1)

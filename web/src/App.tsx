@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { ChatWorkspace } from "./components/ChatWorkspace";
+import { KnowledgeBaseWorkspace } from "./components/KnowledgeBaseWorkspace";
 import { LoginScreen } from "./components/LoginScreen";
 import { ApiError, getCurrentUser, login } from "./lib/api";
 import type { CurrentUser } from "./types";
@@ -13,12 +14,14 @@ export default function App() {
   const [booting, setBooting] = useState(Boolean(token));
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [workspace, setWorkspace] = useState<"chat" | "knowledge">("chat");
 
   const logout = useCallback(() => {
     sessionStorage.removeItem(TOKEN_KEY);
     setToken("");
     setUser(null);
     setBooting(false);
+    setWorkspace("chat");
   }, []);
 
   useEffect(() => {
@@ -70,5 +73,23 @@ export default function App() {
     return <LoginScreen loading={loginLoading} error={loginError} onLogin={handleLogin} />;
   }
 
-  return <ChatWorkspace token={token} user={user} onLogout={logout} />;
+  if (user.role === "admin" && workspace === "knowledge") {
+    return (
+      <KnowledgeBaseWorkspace
+        token={token}
+        user={user}
+        onBack={() => setWorkspace("chat")}
+        onLogout={logout}
+      />
+    );
+  }
+
+  return (
+    <ChatWorkspace
+      token={token}
+      user={user}
+      onLogout={logout}
+      onOpenKnowledgeBase={user.role === "admin" ? () => setWorkspace("knowledge") : undefined}
+    />
+  );
 }

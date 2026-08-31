@@ -124,3 +124,37 @@ export function TrashIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function DatabaseIcon(props: IconProps) {
+  return (
+    <svg {...baseProps} {...props}>
+      <ellipse cx="12" cy="5" rx="8" ry="3" />
+      <path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+    </svg>
+  );
+}
+
+export function UploadIcon(props: IconProps) {
+  return (
+    <svg {...baseProps} {...props}>
+      <path d="M12 16V4M7.5 8.5 12 4l4.5 4.5M5 15v4h14v-4" />
+    </svg>
+  );
+}
+
+export function RefreshIcon(props: IconProps) {
+  return (
+    <svg {...baseProps} {...props}>
+      <path d="M20 7v5h-5M4 17v-5h5" />
+      <path d="M6.1 8.2A7 7 0 0 1 18.5 7L20 9M4 15l1.5 2a7 7 0 0 0 12.4-1.2" />
+    </svg>
+  );
+}
+
+export function ArrowLeftIcon(props: IconProps) {
+  return (
+    <svg {...baseProps} {...props}>
+      <path d="m14.5 5-7 7 7 7M8 12h12" />
+    </svg>
+  );
+}

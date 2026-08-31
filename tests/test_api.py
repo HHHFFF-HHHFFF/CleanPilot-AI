@@ -1,4 +1,6 @@
+import base64
 import json
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -28,6 +30,39 @@ class FakeAgent:
         yield {"type": "answer", "agent": "knowledge_agent", "content": "测试回答"}
 
 
+class FakeKnowledgeService:
+    def __init__(self, source_path):
+        self.document = SimpleNamespace(
+            document_id="doc-1",
+            source_path=str(source_path),
+            filename="manual.txt",
+            status="indexed",
+            chunk_count=3,
+            risk_level="none",
+            failure_reason=None,
+            created_at="2026-08-31T10:00:00+00:00",
+            updated_at="2026-08-31T10:00:00+00:00",
+        )
+        self.uploaded = None
+        self.removed = None
+
+    def list_documents(self):
+        return [self.document]
+
+    def synchronize_existing_documents(self):
+        return [self.document]
+
+    def ingest_upload(self, filename, content):
+        self.uploaded = (filename, content)
+        return self.document
+
+    def index_file(self, source_path):
+        return self.document
+
+    def remove_from_index(self, document_id):
+        self.removed = document_id
+
+
 def build_test_app(tmp_path):
     seed_file = tmp_path / "records.csv"
     seed_file.write_text(
@@ -38,21 +73,33 @@ def build_test_app(tmp_path):
     )
     support_repository = SupportRepository(tmp_path / "support.db")
     support_repository.seed_business_data(seed_file)
+    knowledge_file = tmp_path / "manual.txt"
+    knowledge_file.write_text("测试知识", encoding="utf-8")
+    support_repository.save_knowledge_document(
+        document_id="doc-1",
+        source_path=knowledge_file,
+        filename=knowledge_file.name,
+        content_hash="test-hash",
+        status="indexed",
+        chunk_count=3,
+    )
     auth_repository = AuthRepository(support_repository.database_path)
     AuthService(
         auth_repository,
         AuthSettings(jwt_secret=JWT_SECRET),
-    ).set_password("u-1", "SecurePass123")
+    ).set_password("u-1", "SecurePass123", role="admin")
     AuthService(
         auth_repository,
         AuthSettings(jwt_secret=JWT_SECRET),
     ).set_password("u-2", "SecurePass456")
     fake_agent = FakeAgent()
+    fake_knowledge_service = FakeKnowledgeService(knowledge_file)
     app = create_app(
         ApiSettings(jwt_secret=JWT_SECRET),
         support_repository=support_repository,
         auth_repository=auth_repository,
         agent_factory=lambda: fake_agent,
+        knowledge_service_factory=lambda: fake_knowledge_service,
     )
     return app, fake_agent
 
@@ -84,7 +131,49 @@ def test_login_and_current_user_endpoint(tmp_path):
 
     assert response.status_code == 200
     assert response.json()["user_id"] == "u-1"
+    assert response.json()["role"] == "admin"
     assert response.json()["device"]["model"] == "S9"
+
+
+def test_knowledge_admin_endpoints_enforce_role_and_manage_documents(tmp_path):
+    app, _ = build_test_app(tmp_path)
+    with TestClient(app) as client:
+        assert client.get("/api/v1/admin/knowledge/documents").status_code == 401
+
+        customer_token = login(client, "u-2", "SecurePass456")
+        customer_response = client.get(
+            "/api/v1/admin/knowledge/documents",
+            headers={"Authorization": f"Bearer {customer_token}"},
+        )
+
+        admin_token = login(client)
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        listed = client.get("/api/v1/admin/knowledge/documents", headers=headers)
+        synchronized = client.post("/api/v1/admin/knowledge/synchronize", headers=headers)
+        uploaded = client.post(
+            "/api/v1/admin/knowledge/upload",
+            headers=headers,
+            json={
+                "filename": "manual.txt",
+                "content_base64": base64.b64encode("测试知识".encode()).decode(),
+            },
+        )
+        retried = client.post(
+            "/api/v1/admin/knowledge/documents/doc-1/retry",
+            headers=headers,
+        )
+        removed = client.delete(
+            "/api/v1/admin/knowledge/documents/doc-1",
+            headers=headers,
+        )
+
+    assert customer_response.status_code == 403
+    assert listed.status_code == 200
+    assert listed.json()[0]["filename"] == "manual.txt"
+    assert synchronized.status_code == 200
+    assert uploaded.status_code == 200
+    assert retried.status_code == 200
+    assert removed.status_code == 204
 
 
 def test_local_react_origin_is_allowed_by_cors(tmp_path):

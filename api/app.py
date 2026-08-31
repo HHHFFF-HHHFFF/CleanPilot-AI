@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import threading
 from collections.abc import Callable, Iterator
@@ -24,6 +26,8 @@ from api.schemas import (
     CoordinatesRequest,
     CreateConversationRequest,
     CurrentUserResponse,
+    KnowledgeDocumentResponse,
+    KnowledgeUploadRequest,
     LoginRequest,
     TokenResponse,
 )
@@ -61,6 +65,22 @@ class AgentProvider:
         return self._agent
 
 
+class KnowledgeServiceProvider:
+    """延迟创建知识库服务，避免普通登录请求初始化向量模型。"""
+
+    def __init__(self, factory: Callable[[], Any]):
+        self.factory = factory
+        self._service: Any | None = None
+        self._lock = threading.Lock()
+
+    def get(self) -> Any:
+        if self._service is None:
+            with self._lock:
+                if self._service is None:
+                    self._service = self.factory()
+        return self._service
+
+
 def create_app(
     settings: ApiSettings,
     *,
@@ -68,6 +88,7 @@ def create_app(
     auth_repository: AuthRepository | None = None,
     conversation_repository: ConversationRepository | None = None,
     agent_factory: Callable[[], Any] = ReactAgent,
+    knowledge_service_factory: Callable[[], Any] | None = None,
 ) -> FastAPI:
     support_repository = support_repository or SupportRepository()
     auth_repository = auth_repository or AuthRepository(support_repository.database_path)
@@ -84,6 +105,13 @@ def create_app(
         ),
     )
     agent_provider = AgentProvider(agent_factory)
+    if knowledge_service_factory is None:
+        def knowledge_service_factory():
+            from rag.knowledge_service import KnowledgeBaseService
+            from rag.vector_store import VectorStoreService
+
+            return KnowledgeBaseService(VectorStoreService(), support_repository)
+    knowledge_service_provider = KnowledgeServiceProvider(knowledge_service_factory)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -136,6 +164,28 @@ def create_app(
             )
         return CurrentIdentity(user=user, role=credential.role)
 
+    def admin_identity(
+        identity: CurrentIdentity = Depends(current_identity),
+    ) -> CurrentIdentity:
+        if identity.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="仅管理员可以访问知识库运营功能",
+            )
+        return identity
+
+    def serialize_knowledge_document(document: Any) -> KnowledgeDocumentResponse:
+        return KnowledgeDocumentResponse(
+            document_id=document.document_id,
+            filename=document.filename,
+            status=document.status,
+            chunk_count=document.chunk_count,
+            risk_level=document.risk_level,
+            failure_reason=document.failure_reason,
+            created_at=document.created_at,
+            updated_at=document.updated_at,
+        )
+
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -187,6 +237,86 @@ def create_app(
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="暂时无法获取账户城市天气",
+            ) from error
+
+    @app.get(
+        "/api/v1/admin/knowledge/documents",
+        response_model=list[KnowledgeDocumentResponse],
+    )
+    def list_knowledge_documents(
+        _: CurrentIdentity = Depends(admin_identity),
+    ):
+        service = knowledge_service_provider.get()
+        return [serialize_knowledge_document(document) for document in service.list_documents()]
+
+    @app.post(
+        "/api/v1/admin/knowledge/synchronize",
+        response_model=list[KnowledgeDocumentResponse],
+    )
+    def synchronize_knowledge_documents(
+        _: CurrentIdentity = Depends(admin_identity),
+    ):
+        service = knowledge_service_provider.get()
+        return [
+            serialize_knowledge_document(document)
+            for document in service.synchronize_existing_documents()
+        ]
+
+    @app.post(
+        "/api/v1/admin/knowledge/upload",
+        response_model=KnowledgeDocumentResponse,
+    )
+    def upload_knowledge_document(
+        payload: KnowledgeUploadRequest,
+        _: CurrentIdentity = Depends(admin_identity),
+    ):
+        try:
+            content = base64.b64decode(payload.content_base64, validate=True)
+            document = knowledge_service_provider.get().ingest_upload(
+                payload.filename,
+                content,
+            )
+        except (binascii.Error, OSError, ValueError) as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error) or "上传内容无效",
+            ) from error
+        return serialize_knowledge_document(document)
+
+    @app.post(
+        "/api/v1/admin/knowledge/documents/{document_id}/retry",
+        response_model=KnowledgeDocumentResponse,
+    )
+    def retry_knowledge_document(
+        document_id: str,
+        _: CurrentIdentity = Depends(admin_identity),
+    ):
+        service = knowledge_service_provider.get()
+        document = support_repository.get_knowledge_document(document_id)
+        if document is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="知识文件不存在")
+        try:
+            return serialize_knowledge_document(service.index_file(document.source_path))
+        except (OSError, ValueError) as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+
+    @app.delete(
+        "/api/v1/admin/knowledge/documents/{document_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    def remove_knowledge_document(
+        document_id: str,
+        _: CurrentIdentity = Depends(admin_identity),
+    ) -> None:
+        try:
+            knowledge_service_provider.get().remove_from_index(document_id)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
             ) from error
 
     @app.get(

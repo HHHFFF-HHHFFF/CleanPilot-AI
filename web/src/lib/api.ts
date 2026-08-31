@@ -3,6 +3,7 @@ import type {
   ConversationDetail,
   ConversationSummary,
   CurrentUser,
+  KnowledgeDocument,
   LocationProfile,
   TokenResponse,
 } from "../types";
@@ -105,6 +106,65 @@ export async function deleteConversation(token: string, conversationId: string):
     method: "DELETE",
     headers: authHeaders(token),
   });
+  if (!response.ok) {
+    throw new ApiError(await readError(response), response.status);
+  }
+}
+
+export function listKnowledgeDocuments(token: string): Promise<KnowledgeDocument[]> {
+  return requestJson<KnowledgeDocument[]>("/api/v1/admin/knowledge/documents", {
+    headers: authHeaders(token),
+  });
+}
+
+export function synchronizeKnowledgeDocuments(token: string): Promise<KnowledgeDocument[]> {
+  return requestJson<KnowledgeDocument[]>("/api/v1/admin/knowledge/synchronize", {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const content = result.split(",", 2)[1];
+      if (!content) reject(new Error("无法读取上传文件"));
+      else resolve(content);
+    };
+    reader.onerror = () => reject(new Error("无法读取上传文件"));
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function uploadKnowledgeDocument(
+  token: string,
+  file: File,
+): Promise<KnowledgeDocument> {
+  const contentBase64 = await readFileAsBase64(file);
+  return requestJson<KnowledgeDocument>("/api/v1/admin/knowledge/upload", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ filename: file.name, content_base64: contentBase64 }),
+  });
+}
+
+export function retryKnowledgeDocument(
+  token: string,
+  documentId: string,
+): Promise<KnowledgeDocument> {
+  return requestJson<KnowledgeDocument>(
+    `/api/v1/admin/knowledge/documents/${documentId}/retry`,
+    { method: "POST", headers: authHeaders(token) },
+  );
+}
+
+export async function removeKnowledgeDocument(token: string, documentId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/admin/knowledge/documents/${documentId}`,
+    { method: "DELETE", headers: authHeaders(token) },
+  );
   if (!response.ok) {
     throw new ApiError(await readError(response), response.status);
   }
