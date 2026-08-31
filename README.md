@@ -2,6 +2,20 @@
 
 面向智能清洁设备售前咨询、使用指导、故障诊断与用户运营场景的企业级多智能体服务平台。项目基于 LangChain `create_agent` 与 LangGraph 构建“调度 Agent + 知识问答、故障诊断、用户运营三个功能 Agent”，结合通义千问、Chroma RAG、SQLite 业务数据、FastAPI 身份认证、React 会话工作台、浏览器授权定位与实时天气，形成从知识运营、任务路由、工具执行到服务结果沉淀的完整业务闭环。
 
+## 界面预览
+
+### 安全登录
+
+![CleanPilot AI 登录页](docs/images/login.png)
+
+### 多 Agent 智能服务中心
+
+![CleanPilot AI 客服工作台](docs/images/customer-service.png)
+
+### 管理员知识库运营
+
+![CleanPilot AI 知识库运营中心](docs/images/knowledge-operations.png)
+
 ## 功能亮点
 
 - **RAG 知识问答**：将 TXT、PDF 产品资料切分、向量化并写入 Chroma；检索相关片段后生成有依据的回答。
@@ -15,6 +29,7 @@
 - **定位与天气**：用户授权浏览器位置后，解析城市并展示实时天气；Agent 可在需要时使用当前城市上下文。
 - **可审阅执行摘要**：前端以半透明小字号卡片展示“理解—决策—执行—整合”摘要，最终答案以正常聊天样式单独显示。
 - **账户会话历史**：React 左侧栏展示当前用户的历史会话，支持新建、切换和删除；问题、最终回答及处理摘要写入 SQLite，并按登录用户隔离。
+- **管理员 RBAC**：账户角色由 SQLite 凭证表决定并写入 JWT；React 仅为管理员显示知识库运营入口，上传、同步、重试和移除接口均在后端执行 `admin` 角色校验。
 
 ## 工作流程
 
@@ -82,6 +97,18 @@ $env:APP_CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000,http://loca
 
 请在项目根目录执行：
 
+### Windows 一键启动
+
+确认已激活项目 Conda 环境、安装前后端依赖并配置 `DASHSCOPE_API_KEY` 后，直接双击根目录的 `start.bat`。脚本会自动启动 FastAPI 与 React 开发服务，并打开 `http://127.0.0.1:5173`；关闭新打开的两个终端窗口即可停止服务。
+
+也可以在 PowerShell 中运行：
+
+```powershell
+.\scripts\start_dev.ps1
+```
+
+### 分别启动
+
 ```powershell
 # 首次运行，或 data/ 中的知识文件发生变化后：同步知识库
 python -m rag.vector_store
@@ -97,6 +124,9 @@ python -m uvicorn api.main:app --reload
 
 # 为单个已导入用户设置或重置密码
 python -m scripts.set_user_password 1001
+
+# 将用户设置为管理员并重置密码
+python -m scripts.set_user_password 1001 --role admin
 
 # 安装并启动 React 用户端，默认地址 http://127.0.0.1:5173
 cd web
@@ -126,6 +156,7 @@ pnpm dev
 - 首次启动会将数据写入本地 SQLite `data/support.db` 的 `users`、`devices` 与 `usage_records` 表；后续启动不会重复导入。
 - Streamlit 侧边栏选择的用户 ID 会传入 Agent 运行时上下文；该入口暂时用于内部调试。
 - FastAPI 将密码哈希写入 `user_credentials` 表；登录成功后，受保护接口只接受 Bearer Token，不接收客户端提交的 Agent 用户 ID。
+- `user_credentials.role` 决定账户权限；角色不能由登录页面选择。修改角色后需要退出并重新登录，新的 JWT 才会携带最新角色。
 - `get_user_id` 返回当前运行上下文中的用户；FastAPI 模式下该值来自已验证令牌，而不是模型或请求正文。
 - `get_current_month` 返回机器当前日期对应的 `YYYY-MM`；`fetch_external_data` 使用参数化 SQLite 查询返回 JSON 使用记录，不再直接读取 CSV。
 - 修改 `records.csv` 后，如需重新初始化演示业务数据，可删除本地 `data/support.db` 再启动项目。该操作会同时清除知识库运营状态记录，但不会删除 Chroma 向量；可在知识库运营页重新同步状态。
@@ -143,8 +174,15 @@ pnpm dev
 | `GET/POST /api/v1/conversations` | Bearer Token | 查询当前用户会话或创建新会话 |
 | `GET/DELETE /api/v1/conversations/{id}` | Bearer Token | 读取或删除当前用户指定会话 |
 | `POST /api/v1/chat/stream` | Bearer Token | 以 NDJSON 流输出 Agent 处理摘要和最终回答 |
+| `GET /api/v1/admin/knowledge/documents` | Admin Token | 查看知识文件状态 |
+| `POST /api/v1/admin/knowledge/synchronize` | Admin Token | 同步项目知识文件 |
+| `POST /api/v1/admin/knowledge/upload` | Admin Token | 安全上传 TXT/PDF 并入库 |
+| `POST /api/v1/admin/knowledge/documents/{id}/retry` | Admin Token | 重新入库指定文件 |
+| `DELETE /api/v1/admin/knowledge/documents/{id}` | Admin Token | 从 Chroma 移除指定文件索引 |
 
 `/api/v1/chat/stream` 请求包含 `query`、`conversation_id` 和可选的 `location_profile`。接口拒绝额外的 `user_id` 字段，并强制把令牌中的当前用户传给多 Agent 运行上下文，从 API 层、会话仓储和工具中间件三层阻止跨用户查询。
+
+知识库运营接口使用独立的管理员依赖执行 RBAC 校验。普通用户即使绕过前端直接调用接口，也会收到 `403`；生产部署只需暴露 React 与 FastAPI，Streamlit 页面保留为本地调试入口，不应直接发布到公网。
 
 ## Agent 工具
 
