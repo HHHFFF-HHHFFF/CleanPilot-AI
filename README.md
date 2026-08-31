@@ -11,6 +11,7 @@
 - **用户运营动态 Prompt**：调度结果中的 `task_mode` 会写入运行上下文，用户运营 Agent 在普通服务和使用报告 Prompt 之间切换，不再依赖额外工具修改报告状态。
 - **业务数据闭环**：CSV 仅作为版本化演示数据源，首次启动时导入 SQLite；Agent 以参数化查询读取用户、设备和月度使用记录。
 - **API 与身份边界**：FastAPI 提供登录、当前用户和 NDJSON 流式对话接口；密码使用 PBKDF2 哈希保存，JWT 负责短期身份认证，Agent 用户 ID 只从令牌注入。
+- **独立 React 用户端**：提供账户登录、设备概览、自动定位天气、Agent 团队状态、流式处理摘要与 Markdown 回答；令牌仅保存在当前浏览器标签页。
 - **定位与天气**：用户授权浏览器位置后，解析城市并展示实时天气；Agent 可在需要时使用当前城市上下文。
 - **可审阅执行摘要**：前端以半透明小字号卡片展示“理解—决策—执行—整合”摘要，最终答案以正常聊天样式单独显示。
 - **本次会话回看**：页面可回看当前 Streamlit 会话中的消息与处理摘要；模型不会自动读取历史页面消息，也未实现跨会话持久化记忆。
@@ -42,11 +43,14 @@
 - SQLite
 - FastAPI / Uvicorn / PyJWT
 - PBKDF2-HMAC-SHA256 / Bearer Token
-- Streamlit / streamlit-js-eval
+- React 19 / TypeScript / Vite
+- Streamlit / streamlit-js-eval（内部知识库运营）
 - Open-Meteo / OpenStreetMap Nominatim
 - pytest
 
 ## 环境准备
+
+前端需要 Node.js `^20.19.0` 或 `>=22.12.0`，并建议使用 pnpm；后端继续使用 Python 3.10+。
 
 ### 1. 安装依赖
 
@@ -69,7 +73,7 @@ $env:DASHSCOPE_API_KEY = "your_api_key"
 ```powershell
 $env:APP_JWT_SECRET = "使用随机生成的至少32位密钥"
 $env:APP_JWT_EXPIRE_SECONDS = "3600"
-$env:APP_CORS_ORIGINS = "http://localhost:3000,http://localhost:5173"
+$env:APP_CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173"
 ```
 
 可以使用 `python -c "import secrets; print(secrets.token_urlsafe(48))"` 生成随机密钥。开发环境如需为尚无凭证的演示用户统一初始化密码，可临时设置 `APP_DEMO_PASSWORD`；生产环境不要使用统一密码。
@@ -93,7 +97,14 @@ python -m uvicorn api.main:app --reload
 
 # 为单个已导入用户设置或重置密码
 python -m scripts.set_user_password 1001
+
+# 安装并启动 React 用户端，默认地址 http://127.0.0.1:5173
+cd web
+pnpm install
+pnpm dev
 ```
+
+前端默认请求 `http://127.0.0.1:8000`。如后端地址不同，可复制 `web/.env.example` 为 `web/.env.local`，并修改 `VITE_API_BASE_URL`。
 
 使用 `python -m streamlit` 可以确保 Streamlit 与项目解释器一致。如出现 `ModuleNotFoundError: streamlit_js_eval`，请使用安装了依赖的项目解释器启动，而不要直接调用系统全局的 `streamlit` 命令。
 
@@ -127,6 +138,8 @@ python -m scripts.set_user_password 1001
 | `GET /health` | 无 | 存活检查，不加载模型和向量库 |
 | `POST /api/v1/auth/login` | 无 | 使用用户 ID 和密码换取短期 JWT |
 | `GET /api/v1/users/me` | Bearer Token | 返回当前用户与绑定设备 |
+| `POST /api/v1/context/location-weather` | Bearer Token | 根据浏览器授权坐标返回城市与实时天气 |
+| `POST /api/v1/context/city-weather` | Bearer Token | 浏览器无法定位时查询账户城市天气 |
 | `POST /api/v1/chat/stream` | Bearer Token | 以 NDJSON 流输出 Agent 处理摘要和最终回答 |
 
 `/api/v1/chat/stream` 请求只包含 `query` 和可选的 `location_profile`。接口拒绝额外的 `user_id` 字段，并强制把令牌中的当前用户传给多 Agent 运行上下文，从 API 层和工具中间件两层阻止跨用户查询。
@@ -184,13 +197,15 @@ python -m evals.rag_retrieval --k 5 --report evals/reports/retrieval_report.json
 
 当前评测集包含 15 条选购、维护、故障与扫拖场景用例。已完成一次完整入库后的结果为 **Recall@3 93.33%、MRR 0.9000**。新增或修改知识库后，应补充对应问题和预期来源文件，并重新评测。
 
-## 前端交互说明
+## React 用户端
 
-1. 在侧边栏选择“智能客服”或“知识库运营”。
-2. 在智能客服页选择演示用户；页面会展示其设备信息。
-3. 根据浏览器提示决定是否授权位置访问；授权后可查看当前城市、天气、气温与湿度。
-4. 输入扫地机器人相关问题。处理摘要仅展示可审阅的工具调用与信息整合过程，不展示模型的隐藏逐字推理。
-5. 最终答案与本次页面会话的消息记录一同显示；刷新或关闭会话后不会恢复为长期记忆。
+1. 使用已经设置密码的用户 ID 登录；JWT 仅保存在 `sessionStorage`，关闭标签页后自动清除。
+2. 登录后自动读取当前用户和绑定设备，浏览器会请求位置授权并通过 FastAPI 查询实时天气；无法定位时自动降级为账户城市天气。
+3. 输入扫地机器人相关问题；前端逐行解析 NDJSON，实时展示调度、工具执行和信息整合摘要。
+4. 处理摘要使用弱化卡片显示，并在最终回答完成后自动折叠；最终内容支持 Markdown 排版。
+5. 用户可以中止正在生成的回答；令牌过期或接口返回 `401` 时自动退出到登录页。
+
+Streamlit 客服页目前仍可作为内部调试入口，知识库上传与索引运营继续由 Streamlit 承担。React 完成全部功能验收后，再移除 Streamlit 面向用户的演示用户选择流程。
 
 ## 项目结构
 
@@ -218,6 +233,7 @@ python -m evals.rag_retrieval --k 5 --report evals/reports/retrieval_report.json
 ├── tests/                         # 离线单元测试
 ├── ui/                            # Streamlit 知识库运营页面
 ├── utils/                         # 定位天气、配置、安全扫描等工具
+├── web/                           # React 登录、设备概览与流式对话用户端
 └── requirements.txt
 ```
 
@@ -228,7 +244,7 @@ python -m evals.rag_retrieval --k 5 --report evals/reports/retrieval_report.json
 ## 后续方向
 
 - 增加知识文件的定时增量导入、审计日志和内容所有者审核工作流。
-- 使用独立 React/Vue 前端调用 FastAPI，完成登录、聊天、设备和报告页面，并将 Streamlit 降级为内部运营工具。
+- 增加 React 设备详情、历史报告与账户设置页面，将 Streamlit 完全降级为内部运营工具。
 - 增加刷新令牌、登录限流、审计日志和账户管理流程，并接入真实工单/CRM 系统。
 - 在现有检索评测基础上，增加工具调用成功率、答案质量、用户反馈和生产环境监控。
 - 为故障诊断 Agent 增加图片报警码、设备部件和 App 截图的多模态识别。

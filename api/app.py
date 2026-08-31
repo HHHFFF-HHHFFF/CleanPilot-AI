@@ -15,7 +15,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import StreamingResponse
 
 from agent.react_agent import ReactAgent
-from api.schemas import ChatRequest, CurrentUserResponse, LoginRequest, TokenResponse
+from api.schemas import (
+    ChatRequest,
+    CityWeatherRequest,
+    CoordinatesRequest,
+    CurrentUserResponse,
+    LoginRequest,
+    TokenResponse,
+)
 from api.settings import ApiSettings
 from auth.service import AuthService, AuthSettings, AuthenticationError
 from auth.tokens import TokenError
@@ -23,6 +30,7 @@ from storage.auth_repository import AuthRepository
 from storage.support_repository import SupportRepository, SupportUser
 from utils.config_handler import agent_config
 from utils.logger_handler import logger
+from utils.location_weather import get_city_weather, get_location_weather
 from utils.path_tool import get_abs_path
 
 
@@ -143,6 +151,34 @@ def create_app(
             role=identity.role,
             device=support_repository.get_device(identity.user.user_id),
         )
+
+    @app.post("/api/v1/context/location-weather")
+    def resolve_location_weather(
+        payload: CoordinatesRequest,
+        _: CurrentIdentity = Depends(current_identity),
+    ) -> dict[str, Any]:
+        try:
+            return get_location_weather(payload.latitude, payload.longitude)
+        except Exception as error:
+            logger.warning("定位天气查询失败：%s", error)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="暂时无法获取当前位置天气",
+            ) from error
+
+    @app.post("/api/v1/context/city-weather")
+    def resolve_city_weather(
+        payload: CityWeatherRequest,
+        _: CurrentIdentity = Depends(current_identity),
+    ) -> dict[str, Any]:
+        try:
+            return get_city_weather(payload.city)
+        except Exception as error:
+            logger.warning("账户城市天气查询失败：%s", error)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="暂时无法获取账户城市天气",
+            ) from error
 
     @app.post("/api/v1/chat/stream")
     def stream_chat(

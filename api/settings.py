@@ -6,15 +6,21 @@ import os
 from dataclasses import dataclass, field
 
 
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+
 @dataclass(frozen=True)
 class ApiSettings:
     jwt_secret: str
     token_expire_seconds: int = 3600
     jwt_issuer: str = "cleaning-support-api"
     jwt_audience: str = "cleaning-support-web"
-    cors_origins: list[str] = field(
-        default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"]
-    )
+    cors_origins: list[str] = field(default_factory=lambda: list(DEFAULT_CORS_ORIGINS))
     demo_password: str | None = None
 
     @classmethod
@@ -26,7 +32,7 @@ class ApiSettings:
         cors_origins = [
             origin.strip()
             for origin in os.getenv(
-                "APP_CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"
+                "APP_CORS_ORIGINS", ",".join(DEFAULT_CORS_ORIGINS)
             ).split(",")
             if origin.strip()
         ]

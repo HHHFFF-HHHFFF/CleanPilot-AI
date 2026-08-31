@@ -82,6 +82,22 @@ def test_login_and_current_user_endpoint(tmp_path):
     assert response.json()["device"]["model"] == "S9"
 
 
+def test_local_react_origin_is_allowed_by_cors(tmp_path):
+    app, _ = build_test_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.options(
+            "/api/v1/auth/login",
+            headers={
+                "Origin": "http://127.0.0.1:5173",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+
+
 def test_chat_stream_uses_token_user_and_rejects_forged_identity(tmp_path):
     app, fake_agent = build_test_app(tmp_path)
     with TestClient(app) as client:
@@ -113,3 +129,60 @@ def test_chat_stream_uses_token_user_and_rejects_forged_identity(tmp_path):
             "user_id": "u-1",
         }
     ]
+
+
+def test_location_weather_requires_login_and_validates_coordinates(tmp_path, monkeypatch):
+    app, _ = build_test_app(tmp_path)
+    monkeypatch.setattr(
+        "api.app.get_location_weather",
+        lambda latitude, longitude: {
+            "city": "上海",
+            "latitude": latitude,
+            "longitude": longitude,
+            "condition": "晴",
+            "temperature": 26,
+            "apparent_temperature": 27,
+            "humidity": 52,
+            "wind_speed": 8,
+            "observed_at": "2026-08-31T10:00",
+        },
+    )
+    with TestClient(app) as client:
+        assert client.post(
+            "/api/v1/context/location-weather",
+            json={"latitude": 31.2, "longitude": 121.5},
+        ).status_code == 401
+        token = login(client)
+        headers = {"Authorization": f"Bearer {token}"}
+        invalid = client.post(
+            "/api/v1/context/location-weather",
+            headers=headers,
+            json={"latitude": 100, "longitude": 121.5},
+        )
+        response = client.post(
+            "/api/v1/context/location-weather",
+            headers=headers,
+            json={"latitude": 31.2, "longitude": 121.5},
+        )
+
+    assert invalid.status_code == 422
+    assert response.status_code == 200
+    assert response.json()["city"] == "上海"
+
+
+def test_city_weather_fallback_uses_authenticated_endpoint(tmp_path, monkeypatch):
+    app, _ = build_test_app(tmp_path)
+    monkeypatch.setattr(
+        "api.app.get_city_weather",
+        lambda city: {"city": city, "condition": "晴", "temperature": 26},
+    )
+    with TestClient(app) as client:
+        token = login(client)
+        response = client.post(
+            "/api/v1/context/city-weather",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"city": "上海"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["city"] == "上海"

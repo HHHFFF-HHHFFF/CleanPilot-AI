@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *.pyo
 .venv/
+node_modules/
+web/dist/
+*.tsbuildinfo
+.pytest-tmp*/
 
 # 密钥文件
 .env

@@ -33,3 +33,16 @@ class ChatRequest(BaseModel):
 
     query: str = Field(min_length=1, max_length=4000)
     location_profile: dict[str, Any] | None = None
+
+
+class CoordinatesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+
+
+class CityWeatherRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    city: str = Field(min_length=1, max_length=100)
