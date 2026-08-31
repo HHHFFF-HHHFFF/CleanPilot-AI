@@ -10,7 +10,7 @@ from utils.config_handler import agent_config
 from utils.location_weather import extract_coordinates, format_weather, get_location_weather
 from utils.path_tool import get_abs_path
 
-AGENT_RUNTIME_VERSION = "structured_stream_v3"
+AGENT_RUNTIME_VERSION = "multi_agent_stream_v1"
 
 st.set_page_config(page_title="智扫通机器人智能客服", page_icon="🤖")
 st.title("智扫通机器人智能客服")

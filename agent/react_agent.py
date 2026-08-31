@@ -1,18 +1,10 @@
-from langchain.agents import create_agent
+from typing import Any
+
 from langchain_core.messages import AIMessage, ToolMessage
 
-from agent.tools.agent_tools import (
-    fetch_external_data,
-    fill_context_for_report,
-    get_current_month,
-    get_user_id,
-    get_user_location,
-    get_weather,
-    rag_summarize,
-)
-from agent.tools.middleware import log_before_model, monitor_tool, report_prompt_switch
-from model.factory import chat_model
-from utils.prompt_loader import load_system_prompts
+from agent.router_agent import RouterAgent
+from agent.specialist_agents import CustomerAgent, DiagnosisAgent, KnowledgeAgent
+
 
 TOOL_DISPLAY_NAMES = {
     "rag_summarize": "检索知识库",
@@ -21,7 +13,6 @@ TOOL_DISPLAY_NAMES = {
     "get_user_id": "获取用户信息",
     "get_current_month": "获取当前日期",
     "fetch_external_data": "查询使用记录",
-    "fill_context_for_report": "准备报告上下文",
 }
 
 TOOL_PROCESS_NOTES = {
@@ -41,44 +32,35 @@ TOOL_PROCESS_NOTES = {
         "completed": "已获得当前城市信息，后续可据此补充天气建议。",
     },
     "get_user_id": {
-        "decision": "需要确认用户标识，才能查询个性化使用记录。",
-        "running": "正在获取用户标识。",
-        "completed": "已获得用户标识，准备查询历史使用记录。",
+        "decision": "需要确认当前会话用户，才能查询个性化使用记录。",
+        "running": "正在获取当前会话用户标识。",
+        "completed": "已获得当前会话用户标识，准备查询对应记录。",
     },
     "get_current_month": {
-        "decision": "需要确认当前时间范围，才能定位对应的历史记录。",
+        "decision": "需要确认时间范围，才能定位对应的使用记录。",
         "running": "正在获取当前时间范围。",
         "completed": "已获得时间范围，准备匹配对应记录。",
     },
     "fetch_external_data": {
-        "decision": "需要查询外部使用记录，为建议提供个性化依据。",
-        "running": "正在查询用户历史使用记录。",
+        "decision": "需要查询当前用户的使用记录，为个性化建议提供依据。",
+        "running": "正在查询当前用户的历史使用记录。",
         "completed": "已获得使用记录，正在结合知识库形成建议。",
-    },
-    "fill_context_for_report": {
-        "decision": "当前任务需要切换到结构化报告处理模式。",
-        "running": "正在准备报告所需的上下文信息。",
-        "completed": "报告上下文已准备完成，正在组织结构化结论。",
     },
 }
 
 
 class ReactAgent:
-    def __init__(self):
-        self.agent = create_agent(
-            model=chat_model,
-            system_prompt=load_system_prompts(),
-            tools=[
-                rag_summarize,
-                get_weather,
-                get_user_id,
-                get_user_location,
-                get_current_month,
-                fetch_external_data,
-                fill_context_for_report,
-            ],
-            middleware=[log_before_model, monitor_tool, report_prompt_switch],
-        )
+    def __init__(
+        self,
+        router: Any | None = None,
+        specialists: dict[str, Any] | None = None,
+    ):
+        self.router = router or RouterAgent()
+        self.specialists = specialists or {
+            "knowledge_agent": KnowledgeAgent(),
+            "diagnosis_agent": DiagnosisAgent(),
+            "customer_agent": CustomerAgent(),
+        }
 
     def execute_stream(
         self,
@@ -86,20 +68,35 @@ class ReactAgent:
         location_profile: dict | None = None,
         user_id: str | None = None,
     ):
-        input_dict = {"messages": [{"role": "user", "content": query}]}
+        yield {
+            "type": "trace",
+            "agent": "router_agent",
+            "content": "调度 Agent 正在识别问题类型与所需权限。",
+        }
+
+        decision = self.router.route(query)
+        specialist = self.specialists[decision.target_agent]
+        yield {
+            "type": "trace",
+            "agent": "router_agent",
+            "content": f"{decision.reason} 已交由{specialist.display_name}处理。",
+        }
+
         runtime_context = {
-            "report": False,
+            "agent_name": decision.target_agent,
+            "task_mode": decision.task_mode,
+            "customer_mode": decision.task_mode,
             "location_profile": location_profile or {},
             "user_id": user_id or "",
         }
-        yield {
-            "type": "trace",
-            "content": "已理解问题，正在分析需要使用的知识、环境与用户信息。",
-        }
 
-        for chunk in self.agent.stream(input_dict, stream_mode="values", context=runtime_context):
+        for chunk in specialist.stream(query, runtime_context):
             latest_message = chunk["messages"][-1]
-            content = latest_message.content.strip() if isinstance(latest_message.content, str) else ""
+            content = (
+                latest_message.content.strip()
+                if isinstance(latest_message.content, str)
+                else ""
+            )
 
             if isinstance(latest_message, ToolMessage):
                 tool_name = TOOL_DISPLAY_NAMES.get(latest_message.name, "工具")
@@ -107,11 +104,13 @@ class ReactAgent:
                 if getattr(latest_message, "status", "success") == "error":
                     yield {
                         "type": "trace",
-                        "content": f"{tool_name}暂时不可用，正在调整可用信息后继续处理。",
+                        "agent": decision.target_agent,
+                        "content": f"{tool_name}暂时不可用，正在使用其他可用信息继续处理。",
                     }
                 else:
                     yield {
                         "type": "trace",
+                        "agent": decision.target_agent,
                         "content": f"完成：{process_note.get('completed', f'已完成{tool_name}。')}",
                     }
             elif isinstance(latest_message, AIMessage) and latest_message.tool_calls:
@@ -121,18 +120,25 @@ class ReactAgent:
                     process_note = TOOL_PROCESS_NOTES.get(tool_key, {})
                     yield {
                         "type": "trace",
+                        "agent": decision.target_agent,
                         "content": f"决策：{process_note.get('decision', f'需要调用{tool_name}获取补充信息。')}",
                     }
                     yield {
                         "type": "trace",
+                        "agent": decision.target_agent,
                         "content": f"执行：{process_note.get('running', f'正在调用{tool_name}。')}",
                     }
             elif isinstance(latest_message, AIMessage) and content:
                 yield {
                     "type": "trace",
-                    "content": "已完成信息核验与整合，正在生成最终建议。",
+                    "agent": decision.target_agent,
+                    "content": f"{specialist.display_name}已完成信息核验与整合。",
                 }
-                yield {"type": "answer", "content": content}
+                yield {
+                    "type": "answer",
+                    "agent": decision.target_agent,
+                    "content": content,
+                }
 
 
 if __name__ == "__main__":

@@ -1,13 +1,14 @@
-# 智扫通：多工具扫地机器人智能客服 Agent
+# 智扫通：多 Agent 扫地机器人智能客服
 
-面向扫地机器人售前、使用指导与售后场景的 AI 客服项目。项目基于 LangChain `create_agent` 构建，结合通义千问、Chroma RAG、SQLite 业务数据、浏览器授权定位与实时天气，为用户提供可审阅的智能问答和个性化使用建议。
+面向扫地机器人售前、使用指导与售后场景的 AI 客服项目。项目基于 LangChain `create_agent` 构建“调度 Agent + 知识问答、故障诊断、用户运营三个功能 Agent”，结合通义千问、Chroma RAG、SQLite 业务数据、浏览器授权定位与实时天气，为用户提供可审阅的智能问答和个性化使用建议。
 
 ## 功能亮点
 
 - **RAG 知识问答**：将 TXT、PDF 产品资料切分、向量化并写入 Chroma；检索相关片段后生成有依据的回答。
 - **知识库运营**：提供内置资料同步、TXT/PDF 上传、安全扫描、文件状态查看、重试入库和按文件移除索引能力。
 - **安全入库**：上传文件限制类型与 10 MB 大小；入库前扫描常见提示注入指令，批量写入失败时清理当前文件的半成品向量。
-- **多工具 Agent**：模型按问题自主选择 RAG、天气、当前城市、会话用户标识、当前月份、使用记录与报告上下文切换等 7 个工具。
+- **受控多 Agent 协作**：调度 Agent 输出结构化路由结果，将问题交给知识问答、故障诊断或用户运营 Agent；功能 Agent 按最小权限使用各自工具。
+- **用户运营动态 Prompt**：调度结果中的 `task_mode` 会写入运行上下文，用户运营 Agent 在普通服务和使用报告 Prompt 之间切换，不再依赖额外工具修改报告状态。
 - **业务数据闭环**：CSV 仅作为版本化演示数据源，首次启动时导入 SQLite；Agent 以参数化查询读取用户、设备和月度使用记录。
 - **定位与天气**：用户授权浏览器位置后，解析城市并展示实时天气；Agent 可在需要时使用当前城市上下文。
 - **可审阅执行摘要**：前端以半透明小字号卡片展示“理解—决策—执行—整合”摘要，最终答案以正常聊天样式单独显示。
@@ -21,13 +22,13 @@
   ├─ 选择演示用户并展示设备信息
   ├─ 用户可授权浏览器定位 -> 城市反查与实时天气
   └─ 输入问题
-       -> Agent 根据系统提示词选择工具
-          ├─ RAG：检索 Chroma 中的产品知识
-          ├─ 天气 / 定位：读取当前会话定位或查询指定城市
-          ├─ 业务记录：按用户 ID 和真实当前月份查询 SQLite
-          └─ 使用报告：切换到结构化报告提示词
-       -> 中间件记录调用并注入会话上下文
-       -> 通义千问整合信息，输出 trace 与最终回答
+       -> 调度 Agent 输出 target_agent + task_mode
+          ├─ 知识问答 Agent：RAG、城市和天气
+          ├─ 故障诊断 Agent：RAG、安全诊断、必要时天气环境
+          └─ 用户运营 Agent：当前用户、月份、SQLite 使用记录、RAG
+       -> 用户运营 Agent 根据 task_mode 动态切换普通/报告 Prompt
+       -> 中间件记录调用、注入定位，并强制绑定当前会话用户
+       -> 功能 Agent 整合信息，输出 trace 与最终回答
        -> 前端分别展示处理摘要与最终答案
 ```
 
@@ -98,6 +99,19 @@ python -m streamlit run app.py
 
 ## Agent 工具
 
+### Agent 职责与权限
+
+| Agent | 负责场景 | 可用能力 |
+| --- | --- | --- |
+| 调度 Agent | 意图识别与结构化路由 | 不调用业务工具，不直接回答问题 |
+| 知识问答 Agent | 通用选购、使用、维护和环境适配 | RAG、当前城市、天气 |
+| 故障诊断 Agent | 报警码、无法启动、回充失败、异响、漏水等异常 | RAG、当前城市、天气；包含安全停止与转人工规则 |
+| 用户运营 Agent | 个人使用报告、设备记录、保修与个性化建议 | 当前用户、当前月份、SQLite 使用记录、RAG、城市和天气 |
+
+用户运营工具由中间件强制绑定当前会话 `user_id`。即使模型生成了其他用户 ID，实际查询参数仍会被覆盖为当前用户；缺少会话身份时直接拒绝查询。
+
+### 公共工具
+
 | 工具 | 当前作用 |
 | --- | --- |
 | `rag_summarize` | 检索扫地机器人知识库并概括回答 |
@@ -105,8 +119,7 @@ python -m streamlit run app.py
 | `get_user_location` | 返回当前会话中已授权浏览器定位对应的城市 |
 | `get_user_id` | 返回当前侧边栏选中的会话用户 ID |
 | `get_current_month` | 返回系统当前月份，格式为 `YYYY-MM` |
-| `fetch_external_data` | 参数化查询 SQLite 中指定用户、指定月份的使用记录 |
-| `fill_context_for_report` | 设置报告场景标记，并切换到报告生成 Prompt |
+| `fetch_external_data` | 参数化查询 SQLite 中当前会话用户、指定月份的使用记录 |
 
 ## 浏览器位置与隐私
 
@@ -119,7 +132,7 @@ python -m streamlit run app.py
 
 项目包含两类质量保障：
 
-- **离线单元测试**：覆盖知识库安全扫描、状态仓储、业务数据初始化，以及评测集格式、来源路径归一化、Recall@K、MRR 计算；不调用通义千问、Chroma 或天气服务。
+- **离线单元测试**：覆盖多 Agent 兜底路由、功能 Agent 委派、用户数据权限绑定、知识库安全扫描、状态仓储、业务数据初始化，以及 Recall@K、MRR 计算；不调用通义千问、Chroma 或天气服务。
 - **真实检索评测**：使用 `evals/rag_cases.json` 的标注问题，检查 Chroma Top-K 结果是否包含预期知识文件；会调用 Embedding 服务，但不调用聊天模型。
 
 ```powershell
@@ -150,16 +163,19 @@ python -m evals.rag_retrieval --k 5 --report evals/reports/retrieval_report.json
 ```text
 ├── app.py                         # Streamlit 对话、用户选择、定位和天气界面
 ├── agent/
-│   ├── react_agent.py             # Agent 创建与结构化流式事件
+│   ├── contracts.py               # 结构化路由契约
+│   ├── router_agent.py            # 调度 Agent 与本地兜底路由
+│   ├── specialist_agents.py       # 三个功能 Agent 及工具白名单
+│   ├── react_agent.py             # 多 Agent 兼容入口与流式事件
 │   └── tools/
-│       ├── agent_tools.py         # RAG、天气、业务记录、报告工具
-│       └── middleware.py          # 工具监控、上下文注入与动态 Prompt
+│       ├── agent_tools.py         # 懒加载的 RAG、天气与业务记录工具
+│       └── middleware.py          # 工具监控、用户权限与动态 Prompt
 ├── config/                        # 模型、Chroma、Agent 配置
 ├── data/                          # 知识库文件与业务演示数据源
 ├── docs/                          # 交付路线图
 ├── evals/                         # RAG 评测案例、脚本与报告输出
 ├── model/                         # 通义千问 Chat / Embedding 工厂
-├── prompts/                       # 系统、RAG 和报告 Prompt
+├── prompts/                       # 调度、三个功能 Agent、RAG 和报告 Prompt
 ├── rag/                           # 知识库入库、检索与 RAG 服务
 ├── storage/                       # SQLite 仓储：运营状态与业务数据
 ├── tests/                         # 离线单元测试
@@ -177,4 +193,5 @@ python -m evals.rag_retrieval --k 5 --report evals/reports/retrieval_report.json
 - 增加知识文件的定时增量导入、审计日志和内容所有者审核工作流。
 - 接入真实身份认证、账户设备、工单/CRM 系统，替换演示用户和本地业务数据。
 - 在现有检索评测基础上，增加工具调用成功率、答案质量、用户反馈和生产环境监控。
-- 增加模型可用的长期会话记忆、人工转接和客服反馈闭环。
+- 为故障诊断 Agent 增加图片报警码、设备部件和 App 截图的多模态识别。
+- 增加模型可用的长期会话记忆、人工转接和客服反馈闭环，并将成熟流程沉淀为可复用 Skill。

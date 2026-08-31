@@ -8,7 +8,23 @@ from langgraph.runtime import Runtime
 from langgraph.types import Command
 
 from utils.logger_handler import logger
-from utils.prompt_loader import load_report_prompts, load_system_prompts
+from utils.prompt_loader import load_customer_prompts, load_report_prompts
+
+
+def bind_runtime_tool_arguments(
+    tool_name: str,
+    arguments: dict,
+    runtime_context: dict,
+) -> dict:
+    bound_arguments = dict(arguments)
+    if tool_name != "fetch_external_data":
+        return bound_arguments
+
+    user_id = runtime_context.get("user_id", "")
+    if not user_id:
+        raise PermissionError("当前会话缺少用户身份，不能查询个人使用记录。")
+    bound_arguments["user_id"] = user_id
+    return bound_arguments
 
 
 @wrap_tool_call
@@ -17,7 +33,8 @@ def monitor_tool(
     handler: Callable[[ToolCallRequest], ToolMessage | Command],
 ) -> ToolMessage | Command:
     tool_name = request.tool_call["name"]
-    logger.info(f"[tool monitor] 执行工具: {tool_name}")
+    agent_name = request.runtime.context.get("agent_name", "unknown_agent")
+    logger.info(f"[tool monitor] Agent={agent_name} 执行工具: {tool_name}")
     logger.info(f"[tool monitor] 传入参数: {request.tool_call['args']}")
 
     try:
@@ -32,15 +49,26 @@ def monitor_tool(
         user_id = request.runtime.context.get("user_id", "")
         if tool_name == "get_user_id" and user_id:
             return ToolMessage(
-                content=f"Current conversation user ID: {user_id}",
+                content=f"当前会话用户 ID：{user_id}",
                 tool_call_id=request.tool_call["id"],
             )
 
+        if tool_name == "fetch_external_data":
+            try:
+                request.tool_call["args"] = bind_runtime_tool_arguments(
+                    tool_name,
+                    request.tool_call.get("args", {}),
+                    request.runtime.context,
+                )
+            except PermissionError as error:
+                return ToolMessage(
+                    content=str(error),
+                    tool_call_id=request.tool_call["id"],
+                    status="error",
+                )
+
         result = handler(request)
         logger.info(f"[tool monitor] 工具 {tool_name} 调用成功")
-
-        if tool_name == "fill_context_for_report":
-            request.runtime.context["report"] = True
 
         return result
     except Exception as error:
@@ -59,7 +87,7 @@ def log_before_model(state: AgentState, runtime: Runtime):
 
 
 @dynamic_prompt
-def report_prompt_switch(request: ModelRequest):
-    if request.runtime.context.get("report", False):
+def customer_prompt_switch(request: ModelRequest):
+    if request.runtime.context.get("customer_mode") == "usage_report":
         return load_report_prompts()
-    return load_system_prompts()
+    return load_customer_prompts()
