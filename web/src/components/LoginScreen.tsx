@@ -22,7 +22,7 @@ export function LoginScreen({ loading, error, onLogin }: LoginScreenProps) {
       <section className="login-showcase" aria-label="产品介绍">
         <div className="brand-lockup brand-lockup--light">
           <span className="brand-mark"><DeviceIcon /></span>
-          <span>智扫通</span>
+          <span>CleanPilot AI</span>
         </div>
         <div className="showcase-content">
           <span className="eyebrow eyebrow--dark"><SparklesIcon /> 多 Agent 服务中枢</span>
@@ -41,7 +41,7 @@ export function LoginScreen({ loading, error, onLogin }: LoginScreenProps) {
         <div className="login-card">
           <div className="mobile-brand brand-lockup">
             <span className="brand-mark"><DeviceIcon /></span>
-            <span>智扫通</span>
+            <span>CleanPilot AI</span>
           </div>
           <span className="eyebrow"><ShieldIcon /> 安全服务入口</span>
           <h2>欢迎回来</h2>

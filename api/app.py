@@ -95,7 +95,7 @@ def create_app(
         yield
 
     app = FastAPI(
-        title="智扫通多 Agent 客服 API",
+        title="CleanPilot AI 多智能体服务 API",
         version="1.0.0",
         lifespan=lifespan,
     )

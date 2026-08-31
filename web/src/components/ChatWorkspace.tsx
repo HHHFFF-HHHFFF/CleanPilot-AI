@@ -59,7 +59,7 @@ function welcomeMessage(user: CurrentUser): ChatMessage {
   return {
     id: createId(),
     role: "assistant",
-    content: `你好，${user.display_name}。我是智扫通智能服务助手。你可以咨询产品使用、故障排查，也可以让我生成设备使用报告。`,
+    content: `你好，${user.display_name}。我是 CleanPilot AI 智能服务助手。你可以咨询产品使用、故障排查，也可以让我生成设备使用报告。`,
     agent: "router_agent",
   };
 }
@@ -301,7 +301,7 @@ export function ChatWorkspace({ token, user, onLogout }: ChatWorkspaceProps) {
     <main className="workspace">
       <aside className={`sidebar ${historyOpen ? "sidebar--mobile-open" : ""}`}>
         <div className="brand-lockup brand-lockup--light sidebar-brand">
-          <span className="brand-mark"><DeviceIcon /></span><span>智扫通</span>
+          <span className="brand-mark"><DeviceIcon /></span><span>CleanPilot AI</span>
         </div>
         <button type="button" className="new-chat-button" onClick={startNewConversation} disabled={isStreaming}>
           <NewChatIcon /> 新建会话
@@ -347,7 +347,7 @@ export function ChatWorkspace({ token, user, onLogout }: ChatWorkspaceProps) {
       <section className="service-shell">
         <header className="workspace-header">
           <div>
-            <span className="mobile-wordmark">智扫通</span>
+            <span className="mobile-wordmark">CleanPilot AI</span>
             <h1>{conversations.find((item) => item.conversation_id === activeConversationId)?.title || "智能服务中心"}</h1>
             <p><span className="online-dot" /> 4 位专业 Agent 在线协作</p>
           </div>

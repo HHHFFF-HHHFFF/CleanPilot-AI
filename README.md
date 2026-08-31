@@ -1,6 +1,6 @@
-# 智扫通：多 Agent 扫地机器人智能客服
+# CleanPilot AI：多智能体设备服务平台
 
-面向扫地机器人售前、使用指导与售后场景的 AI 客服项目。项目基于 LangChain `create_agent` 构建“调度 Agent + 知识问答、故障诊断、用户运营三个功能 Agent”，结合通义千问、Chroma RAG、SQLite 业务数据、FastAPI 登录鉴权、浏览器授权定位与实时天气，为用户提供可审阅的智能问答和个性化使用建议。
+面向智能清洁设备售前咨询、使用指导、故障诊断与用户运营场景的企业级多智能体服务平台。项目基于 LangChain `create_agent` 与 LangGraph 构建“调度 Agent + 知识问答、故障诊断、用户运营三个功能 Agent”，结合通义千问、Chroma RAG、SQLite 业务数据、FastAPI 身份认证、React 会话工作台、浏览器授权定位与实时天气，形成从知识运营、任务路由、工具执行到服务结果沉淀的完整业务闭环。
 
 ## 功能亮点
 
