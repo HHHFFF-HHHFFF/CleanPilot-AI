@@ -99,3 +99,28 @@ export function ChevronIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function NewChatIcon(props: IconProps) {
+  return (
+    <svg {...baseProps} {...props}>
+      <path d="M12 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8" />
+      <path d="M16 3v6M13 6h6M8 9h2M8 13h7M8 17h5" />
+    </svg>
+  );
+}
+
+export function ChatIcon(props: IconProps) {
+  return (
+    <svg {...baseProps} {...props}>
+      <path d="M20 15a3 3 0 0 1-3 3H8l-4 3v-5a5 5 0 0 1-1-3V7a3 3 0 0 1 3-3h11a3 3 0 0 1 3 3v8Z" />
+    </svg>
+  );
+}
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <svg {...baseProps} {...props}>
+      <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" />
+    </svg>
+  );
+}

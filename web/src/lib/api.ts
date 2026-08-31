@@ -1,4 +1,11 @@
-import type { AgentEvent, CurrentUser, LocationProfile, TokenResponse } from "../types";
+import type {
+  AgentEvent,
+  ConversationDetail,
+  ConversationSummary,
+  CurrentUser,
+  LocationProfile,
+  TokenResponse,
+} from "../types";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").replace(
   /\/$/,
@@ -73,9 +80,40 @@ export function getCityWeather(token: string, city: string): Promise<LocationPro
   });
 }
 
+export function listConversations(token: string): Promise<ConversationSummary[]> {
+  return requestJson<ConversationSummary[]>("/api/v1/conversations", {
+    headers: authHeaders(token),
+  });
+}
+
+export function createConversation(token: string, title: string): Promise<ConversationSummary> {
+  return requestJson<ConversationSummary>("/api/v1/conversations", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ title }),
+  });
+}
+
+export function getConversation(token: string, conversationId: string): Promise<ConversationDetail> {
+  return requestJson<ConversationDetail>(`/api/v1/conversations/${conversationId}`, {
+    headers: authHeaders(token),
+  });
+}
+
+export async function deleteConversation(token: string, conversationId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/conversations/${conversationId}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new ApiError(await readError(response), response.status);
+  }
+}
+
 export async function streamChat(options: {
   token: string;
   query: string;
+  conversationId: string;
   locationProfile: LocationProfile | null;
   signal: AbortSignal;
   onEvent: (event: AgentEvent) => void;
@@ -85,6 +123,7 @@ export async function streamChat(options: {
     headers: authHeaders(options.token),
     body: JSON.stringify({
       query: options.query,
+      conversation_id: options.conversationId,
       location_profile: options.locationProfile,
     }),
     signal: options.signal,

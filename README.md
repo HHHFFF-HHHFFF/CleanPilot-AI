@@ -14,7 +14,7 @@
 - **独立 React 用户端**：提供账户登录、设备概览、自动定位天气、Agent 团队状态、流式处理摘要与 Markdown 回答；令牌仅保存在当前浏览器标签页。
 - **定位与天气**：用户授权浏览器位置后，解析城市并展示实时天气；Agent 可在需要时使用当前城市上下文。
 - **可审阅执行摘要**：前端以半透明小字号卡片展示“理解—决策—执行—整合”摘要，最终答案以正常聊天样式单独显示。
-- **本次会话回看**：页面可回看当前 Streamlit 会话中的消息与处理摘要；模型不会自动读取历史页面消息，也未实现跨会话持久化记忆。
+- **账户会话历史**：React 左侧栏展示当前用户的历史会话，支持新建、切换和删除；问题、最终回答及处理摘要写入 SQLite，并按登录用户隔离。
 
 ## 工作流程
 
@@ -140,9 +140,11 @@ pnpm dev
 | `GET /api/v1/users/me` | Bearer Token | 返回当前用户与绑定设备 |
 | `POST /api/v1/context/location-weather` | Bearer Token | 根据浏览器授权坐标返回城市与实时天气 |
 | `POST /api/v1/context/city-weather` | Bearer Token | 浏览器无法定位时查询账户城市天气 |
+| `GET/POST /api/v1/conversations` | Bearer Token | 查询当前用户会话或创建新会话 |
+| `GET/DELETE /api/v1/conversations/{id}` | Bearer Token | 读取或删除当前用户指定会话 |
 | `POST /api/v1/chat/stream` | Bearer Token | 以 NDJSON 流输出 Agent 处理摘要和最终回答 |
 
-`/api/v1/chat/stream` 请求只包含 `query` 和可选的 `location_profile`。接口拒绝额外的 `user_id` 字段，并强制把令牌中的当前用户传给多 Agent 运行上下文，从 API 层和工具中间件两层阻止跨用户查询。
+`/api/v1/chat/stream` 请求包含 `query`、`conversation_id` 和可选的 `location_profile`。接口拒绝额外的 `user_id` 字段，并强制把令牌中的当前用户传给多 Agent 运行上下文，从 API 层、会话仓储和工具中间件三层阻止跨用户查询。
 
 ## Agent 工具
 
@@ -203,7 +205,10 @@ python -m evals.rag_retrieval --k 5 --report evals/reports/retrieval_report.json
 2. 登录后自动读取当前用户和绑定设备，浏览器会请求位置授权并通过 FastAPI 查询实时天气；无法定位时自动降级为账户城市天气。
 3. 输入扫地机器人相关问题；前端逐行解析 NDJSON，实时展示调度、工具执行和信息整合摘要。
 4. 处理摘要使用弱化卡片显示，并在最终回答完成后自动折叠；最终内容支持 Markdown 排版。
-5. 用户可以中止正在生成的回答；令牌过期或接口返回 `401` 时自动退出到登录页。
+5. 左侧栏按更新时间展示账户历史会话，可新建、切换或删除；移动端通过顶部会话按钮打开历史抽屉。
+6. 用户可以中止正在生成的回答；令牌过期或接口返回 `401` 时自动退出到登录页。
+
+会话历史用于跨刷新恢复页面消息，但当前 Agent 每次仍以本轮问题为主要输入，不会自动把整段历史发送给模型。后续长期记忆会增加历史摘要、上下文窗口控制和敏感信息过滤。
 
 Streamlit 客服页目前仍可作为内部调试入口，知识库上传与索引运营继续由 Streamlit 承担。React 完成全部功能验收后，再移除 Streamlit 面向用户的演示用户选择流程。
 

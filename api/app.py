@@ -18,7 +18,11 @@ from agent.react_agent import ReactAgent
 from api.schemas import (
     ChatRequest,
     CityWeatherRequest,
+    ConversationDetailResponse,
+    ConversationMessageResponse,
+    ConversationSummaryResponse,
     CoordinatesRequest,
+    CreateConversationRequest,
     CurrentUserResponse,
     LoginRequest,
     TokenResponse,
@@ -27,6 +31,7 @@ from api.settings import ApiSettings
 from auth.service import AuthService, AuthSettings, AuthenticationError
 from auth.tokens import TokenError
 from storage.auth_repository import AuthRepository
+from storage.conversation_repository import ConversationRepository
 from storage.support_repository import SupportRepository, SupportUser
 from utils.config_handler import agent_config
 from utils.logger_handler import logger
@@ -61,10 +66,14 @@ def create_app(
     *,
     support_repository: SupportRepository | None = None,
     auth_repository: AuthRepository | None = None,
+    conversation_repository: ConversationRepository | None = None,
     agent_factory: Callable[[], Any] = ReactAgent,
 ) -> FastAPI:
     support_repository = support_repository or SupportRepository()
     auth_repository = auth_repository or AuthRepository(support_repository.database_path)
+    conversation_repository = conversation_repository or ConversationRepository(
+        support_repository.database_path
+    )
     auth_service = AuthService(
         auth_repository,
         AuthSettings(
@@ -94,7 +103,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
     )
     bearer = HTTPBearer(auto_error=False)
@@ -180,26 +189,135 @@ def create_app(
                 detail="暂时无法获取账户城市天气",
             ) from error
 
+    @app.get(
+        "/api/v1/conversations",
+        response_model=list[ConversationSummaryResponse],
+    )
+    def list_conversations(
+        identity: CurrentIdentity = Depends(current_identity),
+    ):
+        return conversation_repository.list_conversations(identity.user.user_id)
+
+    @app.post(
+        "/api/v1/conversations",
+        response_model=ConversationSummaryResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_conversation(
+        payload: CreateConversationRequest,
+        identity: CurrentIdentity = Depends(current_identity),
+    ):
+        return conversation_repository.create_conversation(
+            identity.user.user_id,
+            payload.title,
+        )
+
+    @app.get(
+        "/api/v1/conversations/{conversation_id}",
+        response_model=ConversationDetailResponse,
+    )
+    def get_conversation(
+        conversation_id: str,
+        identity: CurrentIdentity = Depends(current_identity),
+    ):
+        result = conversation_repository.get_conversation(
+            identity.user.user_id,
+            conversation_id,
+        )
+        if result is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在")
+        conversation, messages = result
+        return ConversationDetailResponse(
+            conversation=ConversationSummaryResponse(**conversation.__dict__),
+            messages=[ConversationMessageResponse(**message.__dict__) for message in messages],
+        )
+
+    @app.delete(
+        "/api/v1/conversations/{conversation_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    def delete_conversation(
+        conversation_id: str,
+        identity: CurrentIdentity = Depends(current_identity),
+    ) -> None:
+        if not conversation_repository.delete_conversation(
+            identity.user.user_id,
+            conversation_id,
+        ):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在")
+
     @app.post("/api/v1/chat/stream")
     def stream_chat(
         payload: ChatRequest,
         identity: CurrentIdentity = Depends(current_identity),
     ) -> StreamingResponse:
+        if payload.conversation_id:
+            existing_conversation = conversation_repository.get_conversation(
+                identity.user.user_id,
+                payload.conversation_id,
+            )
+            if existing_conversation is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="会话不存在",
+                )
+            conversation = existing_conversation[0]
+        else:
+            conversation = conversation_repository.create_conversation(
+                identity.user.user_id,
+                payload.query,
+            )
+        conversation_repository.add_message(
+            identity.user.user_id,
+            conversation.conversation_id,
+            role="user",
+            content=payload.query,
+        )
+
         def generate_events() -> Iterator[str]:
+            answer_parts: list[str] = []
+            traces: list[str] = []
+            active_agent: str | None = None
             try:
+                yield json.dumps(
+                    {
+                        "type": "conversation",
+                        "conversation_id": conversation.conversation_id,
+                        "content": conversation.title,
+                    },
+                    ensure_ascii=False,
+                ) + "\n"
                 agent = agent_provider.get()
                 for event in agent.execute_stream(
                     payload.query,
                     location_profile=payload.location_profile,
                     user_id=identity.user.user_id,
                 ):
+                    active_agent = event.get("agent") or active_agent
+                    if event.get("type") == "trace":
+                        traces.append(event.get("content", ""))
+                    elif event.get("type") in {"answer", "error"}:
+                        answer_parts.append(event.get("content", ""))
                     yield json.dumps(event, ensure_ascii=False) + "\n"
             except Exception as error:
                 logger.exception("流式对话处理失败：%s", error)
+                error_message = "服务暂时不可用，请稍后重试。"
+                answer_parts.append(error_message)
                 yield json.dumps(
-                    {"type": "error", "content": "服务暂时不可用，请稍后重试。"},
+                    {"type": "error", "content": error_message},
                     ensure_ascii=False,
                 ) + "\n"
+            finally:
+                answer = "\n\n".join(part for part in answer_parts if part)
+                if answer:
+                    conversation_repository.add_message(
+                        identity.user.user_id,
+                        conversation.conversation_id,
+                        role="assistant",
+                        content=answer,
+                        traces=traces,
+                        agent=active_agent,
+                    )
 
         return StreamingResponse(generate_events(), media_type="application/x-ndjson")
 

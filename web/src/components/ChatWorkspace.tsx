@@ -1,18 +1,34 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import ReactMarkdown from "react-markdown";
 
-import { ApiError, streamChat } from "../lib/api";
-import type { AgentEvent, ChatMessage, CurrentUser, LocationProfile } from "../types";
+import {
+  ApiError,
+  createConversation,
+  deleteConversation,
+  getConversation,
+  listConversations,
+  streamChat,
+} from "../lib/api";
+import type {
+  AgentEvent,
+  ChatMessage,
+  ConversationSummary,
+  CurrentUser,
+  LocationProfile,
+} from "../types";
 import { useLocationWeather, type LocationStatus } from "../hooks/useLocationWeather";
 import {
   ChevronIcon,
+  ChatIcon,
   DeviceIcon,
   LocationIcon,
   LogoutIcon,
+  NewChatIcon,
   SendIcon,
   ShieldIcon,
   SparklesIcon,
   StopIcon,
+  TrashIcon,
   WeatherIcon,
 } from "./Icons";
 
@@ -37,6 +53,15 @@ const AGENT_LABELS: Record<string, string> = {
 
 function createId(): string {
   return crypto.randomUUID();
+}
+
+function welcomeMessage(user: CurrentUser): ChatMessage {
+  return {
+    id: createId(),
+    role: "assistant",
+    content: `你好，${user.display_name}。我是智扫通智能服务助手。你可以咨询产品使用、故障排查，也可以让我生成设备使用报告。`,
+    agent: "router_agent",
+  };
 }
 
 function formatDate(value?: string): string {
@@ -111,19 +136,33 @@ function LocationCard({
 }
 
 export function ChatWorkspace({ token, user, onLogout }: ChatWorkspaceProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: createId(),
-      role: "assistant",
-      content: `你好，${user.display_name}。我是智扫通智能服务助手。你可以咨询产品使用、故障排查，也可以让我生成设备使用报告。`,
-      agent: "router_agent",
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage(user)]);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [input, setInput] = useState("");
   const [streamController, setStreamController] = useState<AbortController | null>(null);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const { profile, status, refresh } = useLocationWeather(token, user.city, onLogout);
   const isStreaming = streamController !== null;
+
+  useEffect(() => {
+    let active = true;
+    listConversations(token)
+      .then((items) => {
+        if (active) setConversations(items);
+      })
+      .catch((error) => {
+        if (active && error instanceof ApiError && error.status === 401) onLogout();
+      })
+      .finally(() => {
+        if (active) setHistoryLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [onLogout, token]);
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -132,6 +171,7 @@ export function ChatWorkspace({ token, user, onLogout }: ChatWorkspaceProps) {
   function updateAssistant(messageId: string, event: AgentEvent) {
     setMessages((current) => current.map((message) => {
       if (message.id !== messageId) return message;
+      if (event.type === "conversation") return message;
       if (event.type === "trace") {
         return { ...message, traces: [...(message.traces || []), event.content], agent: event.agent };
       }
@@ -149,6 +189,19 @@ export function ChatWorkspace({ token, user, onLogout }: ChatWorkspaceProps) {
   async function sendMessage(preset?: string) {
     const query = (preset ?? input).trim();
     if (!query || isStreaming) return;
+    let conversationId = activeConversationId;
+    if (!conversationId) {
+      try {
+        const conversation = await createConversation(token, query);
+        conversationId = conversation.conversation_id;
+        setActiveConversationId(conversationId);
+        setConversations((current) => [conversation, ...current]);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) onLogout();
+        return;
+      }
+    }
+
     const assistantId = createId();
     const controller = new AbortController();
     setInput("");
@@ -163,6 +216,7 @@ export function ChatWorkspace({ token, user, onLogout }: ChatWorkspaceProps) {
       await streamChat({
         token,
         query,
+        conversationId,
         locationProfile: profile,
         signal: controller.signal,
         onEvent: (event) => updateAssistant(assistantId, event),
@@ -184,6 +238,55 @@ export function ChatWorkspace({ token, user, onLogout }: ChatWorkspaceProps) {
         message.id === assistantId ? { ...message, pending: false } : message
       )));
       setStreamController(null);
+      try {
+        setConversations(await listConversations(token));
+      } catch {
+        // 会话回答已经完成，历史列表刷新失败时保留当前界面。
+      }
+    }
+  }
+
+  async function openConversation(conversationId: string) {
+    if (isStreaming || conversationId === activeConversationId) {
+      setHistoryOpen(false);
+      return;
+    }
+    setHistoryLoading(true);
+    try {
+      const detail = await getConversation(token, conversationId);
+      setActiveConversationId(conversationId);
+      setMessages(detail.messages.map((message) => ({
+        id: message.message_id,
+        role: message.role,
+        content: message.content,
+        traces: message.traces,
+        agent: message.agent || undefined,
+      })));
+      setHistoryOpen(false);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) onLogout();
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function startNewConversation() {
+    if (isStreaming) return;
+    setActiveConversationId(null);
+    setMessages([welcomeMessage(user)]);
+    setHistoryOpen(false);
+  }
+
+  async function removeConversation(conversationId: string) {
+    if (isStreaming) return;
+    try {
+      await deleteConversation(token, conversationId);
+      setConversations((current) => current.filter(
+        (conversation) => conversation.conversation_id !== conversationId,
+      ));
+      if (activeConversationId === conversationId) startNewConversation();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) onLogout();
     }
   }
 
@@ -196,15 +299,39 @@ export function ChatWorkspace({ token, user, onLogout }: ChatWorkspaceProps) {
 
   return (
     <main className="workspace">
-      <aside className="sidebar">
+      <aside className={`sidebar ${historyOpen ? "sidebar--mobile-open" : ""}`}>
         <div className="brand-lockup brand-lockup--light sidebar-brand">
           <span className="brand-mark"><DeviceIcon /></span><span>智扫通</span>
         </div>
-        <nav className="sidebar-nav" aria-label="主要导航">
-          <button type="button" className="nav-item nav-item--active"><SparklesIcon /> 智能服务</button>
-          <button type="button" className="nav-item" disabled><DeviceIcon /> 我的设备 <small>即将开放</small></button>
+        <button type="button" className="new-chat-button" onClick={startNewConversation} disabled={isStreaming}>
+          <NewChatIcon /> 新建会话
+        </button>
+        <div className="history-heading"><span>最近会话</span><small>{conversations.length}</small></div>
+        <nav className="conversation-list" aria-label="历史会话">
+          {historyLoading && <div className="history-placeholder">正在读取会话…</div>}
+          {!historyLoading && !conversations.length && (
+            <div className="history-placeholder">还没有历史会话</div>
+          )}
+          {conversations.map((conversation) => (
+            <div
+              className={`conversation-item ${activeConversationId === conversation.conversation_id ? "conversation-item--active" : ""}`}
+              key={conversation.conversation_id}
+            >
+              <button type="button" onClick={() => void openConversation(conversation.conversation_id)}>
+                <ChatIcon />
+                <span><strong>{conversation.title}</strong><small>{conversation.preview || "新会话"}</small></span>
+              </button>
+              <button
+                type="button"
+                className="delete-conversation"
+                aria-label={`删除会话：${conversation.title}`}
+                onClick={() => void removeConversation(conversation.conversation_id)}
+              >
+                <TrashIcon />
+              </button>
+            </div>
+          ))}
         </nav>
-        <div className="sidebar-spacer" />
         <div className="privacy-card">
           <ShieldIcon />
           <div><strong>隐私保护已开启</strong><span>身份与设备数据按账户隔离</span></div>
@@ -215,15 +342,19 @@ export function ChatWorkspace({ token, user, onLogout }: ChatWorkspaceProps) {
           <LogoutIcon />
         </button>
       </aside>
+      {historyOpen && <button type="button" className="sidebar-overlay" onClick={() => setHistoryOpen(false)} aria-label="关闭会话列表" />}
 
       <section className="service-shell">
         <header className="workspace-header">
           <div>
             <span className="mobile-wordmark">智扫通</span>
-            <h1>智能服务中心</h1>
+            <h1>{conversations.find((item) => item.conversation_id === activeConversationId)?.title || "智能服务中心"}</h1>
             <p><span className="online-dot" /> 4 位专业 Agent 在线协作</p>
           </div>
-          <button type="button" className="mobile-logout" onClick={onLogout}><LogoutIcon /></button>
+          <div className="mobile-actions">
+            <button type="button" className="mobile-history" onClick={() => setHistoryOpen(true)}><ChatIcon /></button>
+            <button type="button" className="mobile-logout" onClick={onLogout}><LogoutIcon /></button>
+          </div>
         </header>
 
         <div className="service-grid">

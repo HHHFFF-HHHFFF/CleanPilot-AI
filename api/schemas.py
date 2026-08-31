@@ -32,6 +32,7 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     query: str = Field(min_length=1, max_length=4000)
+    conversation_id: str | None = Field(default=None, min_length=1, max_length=64)
     location_profile: dict[str, Any] | None = None
 
 
@@ -46,3 +47,31 @@ class CityWeatherRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     city: str = Field(min_length=1, max_length=100)
+
+
+class CreateConversationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+
+
+class ConversationSummaryResponse(BaseModel):
+    conversation_id: str
+    title: str
+    preview: str
+    created_at: str
+    updated_at: str
+
+
+class ConversationMessageResponse(BaseModel):
+    message_id: str
+    role: str
+    content: str
+    traces: list[str]
+    agent: str | None
+    created_at: str
+
+
+class ConversationDetailResponse(BaseModel):
+    conversation: ConversationSummaryResponse
+    messages: list[ConversationMessageResponse]

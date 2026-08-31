@@ -377,6 +377,157 @@ button:disabled {
   gap: 7px;
 }
 
+.new-chat-button {
+  align-items: center;
+  background: var(--accent);
+  border: 0;
+  border-radius: 10px;
+  color: #062d29;
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 750;
+  gap: 9px;
+  justify-content: center;
+  margin: 0 2px 25px;
+  min-height: 42px;
+}
+
+.new-chat-button:hover:not(:disabled) {
+  background: #25caba;
+}
+
+.new-chat-button:disabled {
+  background: #314056;
+  color: #77869a;
+}
+
+.new-chat-button svg {
+  height: 18px;
+  width: 18px;
+}
+
+.history-heading {
+  align-items: center;
+  color: #697990;
+  display: flex;
+  font-size: 0.62rem;
+  font-weight: 700;
+  justify-content: space-between;
+  letter-spacing: 0.08em;
+  padding: 0 8px 9px;
+}
+
+.history-heading small {
+  background: #142238;
+  border-radius: 99px;
+  color: #718198;
+  font-size: 0.55rem;
+  padding: 2px 6px;
+}
+
+.conversation-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0 12px;
+  scrollbar-color: #273750 transparent;
+  scrollbar-width: thin;
+}
+
+.history-placeholder {
+  color: #526178;
+  font-size: 0.67rem;
+  line-height: 1.6;
+  padding: 16px 9px;
+  text-align: center;
+}
+
+.conversation-item {
+  align-items: center;
+  border-radius: 9px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 27px;
+  position: relative;
+}
+
+.conversation-item:hover,
+.conversation-item--active {
+  background: #132238;
+}
+
+.conversation-item > button:first-child {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #7d8ca1;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: 17px minmax(0, 1fr);
+  min-width: 0;
+  padding: 9px 4px 9px 10px;
+  text-align: left;
+}
+
+.conversation-item > button:first-child > svg {
+  height: 16px;
+  width: 16px;
+}
+
+.conversation-item strong,
+.conversation-item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-item strong {
+  color: #aeb9c7;
+  font-size: 0.68rem;
+  font-weight: 650;
+  margin-bottom: 3px;
+}
+
+.conversation-item small {
+  color: #506078;
+  font-size: 0.56rem;
+}
+
+.conversation-item--active strong,
+.conversation-item--active > button:first-child > svg {
+  color: #6ee7d8;
+}
+
+.delete-conversation {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #4f5f75;
+  display: flex;
+  height: 27px;
+  justify-content: center;
+  opacity: 0;
+  padding: 5px;
+  width: 27px;
+}
+
+.conversation-item:hover .delete-conversation,
+.conversation-item--active .delete-conversation {
+  opacity: 1;
+}
+
+.delete-conversation:hover {
+  color: #ec7f87;
+}
+
+.delete-conversation svg {
+  height: 14px;
+  width: 14px;
+}
+
 .nav-item {
   align-items: center;
   background: transparent;
@@ -540,7 +691,10 @@ button:disabled {
 }
 
 .mobile-wordmark,
-.mobile-logout {
+.mobile-actions,
+.mobile-history,
+.mobile-logout,
+.sidebar-overlay {
   display: none;
 }
 
@@ -555,15 +709,35 @@ button:disabled {
   background: #fff;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .message-list {
   flex: 1;
+  min-height: 0;
+  overscroll-behavior: contain;
   overflow-y: auto;
   padding: 38px clamp(28px, 5vw, 78px) 25px;
+  scroll-behavior: smooth;
   scrollbar-color: #cdd5df transparent;
   scrollbar-width: thin;
+  touch-action: pan-y;
+}
+
+.message-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.message-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.message-list::-webkit-scrollbar-thumb {
+  background: #cdd5df;
+  border: 2px solid #fff;
+  border-radius: 999px;
 }
 
 .message-row {
@@ -1126,13 +1300,41 @@ button:disabled {
     display: none;
   }
 
+  .sidebar.sidebar--mobile-open {
+    box-shadow: 20px 0 60px rgba(0, 0, 0, 0.28);
+    display: flex;
+    height: 100vh;
+    left: 0;
+    position: fixed;
+    top: 0;
+    width: min(290px, 84vw);
+    z-index: 30;
+  }
+
+  .sidebar-overlay {
+    background: rgba(4, 10, 18, 0.5);
+    border: 0;
+    display: block;
+    inset: 0;
+    padding: 0;
+    position: fixed;
+    z-index: 20;
+  }
+
   .service-shell {
     height: 100vh;
   }
 
   .mobile-wordmark,
+  .mobile-actions,
+  .mobile-history,
   .mobile-logout {
     display: block;
+  }
+
+  .mobile-actions {
+    display: flex;
+    gap: 7px;
   }
 
   .mobile-wordmark {
@@ -1143,6 +1345,7 @@ button:disabled {
     margin-bottom: 4px;
   }
 
+  .mobile-history,
   .mobile-logout {
     background: #f1f4f7;
     border: 0;
@@ -1153,6 +1356,7 @@ button:disabled {
     width: 36px;
   }
 
+  .mobile-history svg,
   .mobile-logout svg {
     height: 20px;
     width: 20px;

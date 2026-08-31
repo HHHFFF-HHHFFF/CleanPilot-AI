@@ -32,8 +32,9 @@ export type LocationProfile = {
 };
 
 export type AgentEvent = {
-  type: "trace" | "answer" | "error";
+  type: "conversation" | "trace" | "answer" | "error";
   agent?: string;
+  conversation_id?: string;
   content: string;
 };
 
@@ -45,4 +46,24 @@ export type ChatMessage = {
   agent?: string;
   pending?: boolean;
   error?: boolean;
+};
+
+export type ConversationSummary = {
+  conversation_id: string;
+  title: string;
+  preview: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ConversationDetail = {
+  conversation: ConversationSummary;
+  messages: Array<{
+    message_id: string;
+    role: "user" | "assistant";
+    content: string;
+    traces: string[];
+    agent: string | null;
+    created_at: string;
+  }>;
 };
