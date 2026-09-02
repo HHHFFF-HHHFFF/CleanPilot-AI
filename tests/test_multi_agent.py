@@ -20,8 +20,16 @@ class FakeSpecialist:
     def __init__(self):
         self.calls = []
 
-    def stream(self, query, runtime_context):
-        self.calls.append((query, runtime_context))
+    def stream(
+        self,
+        query,
+        runtime_context,
+        conversation_history=None,
+        memory_context="",
+    ):
+        self.calls.append(
+            (query, runtime_context, conversation_history or [], memory_context)
+        )
         yield {"messages": [AIMessage(content="测试回答")]}
 
 
@@ -69,6 +77,8 @@ def test_react_agent_delegates_to_selected_specialist_with_runtime_context():
         "agent": "customer_agent",
         "content": "测试回答",
     }
+    assert events[2]["task_mode"] == "usage_report"
+    assert events[2]["skill_id"] == "monthly_usage_report"
 
 
 def test_usage_query_is_forced_to_current_session_user():
@@ -106,7 +116,23 @@ def test_fault_diagnosis_loads_triage_skill():
         specialists={"diagnosis_agent": specialist},
     )
 
-    events = list(agent.execute_stream("设备冒烟并有焦味"))
+    events = list(
+        agent.execute_stream(
+            "设备冒烟并有焦味",
+            classified_memories=[
+                {
+                    "agent_name": "diagnosis_agent",
+                    "skill_id": "fault_triage",
+                    "content": "该设备上次出现过 E3。",
+                },
+                {
+                    "agent_name": "customer_agent",
+                    "skill_id": "monthly_usage_report",
+                    "content": "这条运营记忆不应进入诊断上下文。",
+                },
+            ],
+        )
+    )
 
     runtime_context = specialist.calls[0][1]
     assert runtime_context["skill_id"] == "fault_triage"
@@ -117,6 +143,8 @@ def test_fault_diagnosis_loads_triage_skill():
         "get_weather",
     ]
     assert "故障分级诊断 Skill" in events[2]["content"]
+    assert "该设备上次出现过 E3" in specialist.calls[0][3]
+    assert "运营记忆" not in specialist.calls[0][3]
 
 
 def test_skill_tool_access_rejects_tools_outside_whitelist():

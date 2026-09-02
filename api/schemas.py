@@ -93,3 +93,25 @@ class KnowledgeUploadRequest(BaseModel):
 
     filename: str = Field(min_length=1, max_length=255)
     content_base64: str = Field(min_length=1)
+
+
+class MemoryItemResponse(BaseModel):
+    memory_id: str
+    device_id: str | None
+    conversation_id: str | None
+    memory_type: str
+    memory_key: str
+    agent_name: str
+    skill_id: str
+    content: str
+    confidence: float
+    version: int
+    created_at: str
+    updated_at: str
+    expires_at: str | None
+
+
+class MemoryUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(min_length=1, max_length=2000)

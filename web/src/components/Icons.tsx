@@ -158,3 +158,21 @@ export function ArrowLeftIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function MemoryIcon(props: IconProps) {
+  return (
+    <svg {...baseProps} {...props}>
+      <path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v.4A3.8 3.8 0 0 0 4 15a3.5 3.5 0 0 0 5.5 2.9V4.5ZM14.5 4.5A3.5 3.5 0 0 1 18 8v.4a3.8 3.8 0 0 1 2 6.6 3.5 3.5 0 0 1-5.5 2.9V4.5Z" />
+      <path d="M9.5 9H7.8M14.5 9h1.7M9.5 14H7M14.5 14H17" />
+    </svg>
+  );
+}
+
+export function EditIcon(props: IconProps) {
+  return (
+    <svg {...baseProps} {...props}>
+      <path d="m4 20 4.2-1 10.9-10.9a2 2 0 0 0-2.8-2.8L5.4 16.2 4 20Z" />
+      <path d="m14.8 6.8 2.8 2.8" />
+    </svg>
+  );
+}

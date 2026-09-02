@@ -24,6 +24,7 @@ import {
   DeviceIcon,
   LocationIcon,
   LogoutIcon,
+  MemoryIcon,
   NewChatIcon,
   SendIcon,
   ShieldIcon,
@@ -37,6 +38,7 @@ type ChatWorkspaceProps = {
   token: string;
   user: CurrentUser;
   onLogout: () => void;
+  onOpenMemories: () => void;
   onOpenKnowledgeBase?: () => void;
 };
 
@@ -137,7 +139,7 @@ function LocationCard({
   );
 }
 
-export function ChatWorkspace({ token, user, onLogout, onOpenKnowledgeBase }: ChatWorkspaceProps) {
+export function ChatWorkspace({ token, user, onLogout, onOpenMemories, onOpenKnowledgeBase }: ChatWorkspaceProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage(user)]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -307,6 +309,9 @@ export function ChatWorkspace({ token, user, onLogout, onOpenKnowledgeBase }: Ch
         </div>
         <button type="button" className="new-chat-button" onClick={startNewConversation} disabled={isStreaming}>
           <NewChatIcon /> 新建会话
+        </button>
+        <button type="button" className="admin-nav-button" onClick={onOpenMemories}>
+          <MemoryIcon /> 我的记忆
         </button>
         {user.role === "admin" && onOpenKnowledgeBase && (
           <button type="button" className="admin-nav-button" onClick={onOpenKnowledgeBase}>

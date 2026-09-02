@@ -74,6 +74,9 @@ class ReactAgent:
         query: str,
         location_profile: dict | None = None,
         user_id: str | None = None,
+        conversation_history: list[dict[str, str]] | None = None,
+        memory_context: str = "",
+        classified_memories: list[dict[str, str]] | None = None,
     ):
         yield {
             "type": "trace",
@@ -94,6 +97,8 @@ class ReactAgent:
                 "type": "trace",
                 "agent": decision.target_agent,
                 "content": f"已启用{skill.display_name}，将按照标准业务流程执行。",
+                "task_mode": decision.task_mode,
+                "skill_id": skill.skill_id,
             }
 
         runtime_context = {
@@ -107,8 +112,30 @@ class ReactAgent:
             "skill_instruction": skill.instruction if skill else "",
             "skill_allowed_tools": list(skill.allowed_tools) if skill else [],
         }
+        scoped_memory = []
+        for memory in classified_memories or []:
+            memory_agent = memory.get("agent_name", "")
+            memory_skill = memory.get("skill_id", "")
+            if memory_agent and memory_agent != decision.target_agent:
+                continue
+            if memory_skill and (skill is None or memory_skill != skill.skill_id):
+                continue
+            content = memory.get("content", "").strip()
+            if content:
+                scoped_memory.append(content)
+        scoped_memory_context = memory_context
+        if scoped_memory:
+            scoped_section = "相关长期记忆：\n" + "\n\n".join(scoped_memory)
+            scoped_memory_context = "\n\n".join(
+                section for section in [memory_context, scoped_section] if section
+            )
 
-        for chunk in specialist.stream(query, runtime_context):
+        for chunk in specialist.stream(
+            query,
+            runtime_context,
+            conversation_history=conversation_history,
+            memory_context=scoped_memory_context,
+        ):
             latest_message = chunk["messages"][-1]
             content = (
                 latest_message.content.strip()

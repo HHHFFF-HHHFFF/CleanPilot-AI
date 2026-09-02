@@ -5,6 +5,7 @@ import type {
   CurrentUser,
   KnowledgeDocument,
   LocationProfile,
+  MemoryItem,
   TokenResponse,
 } from "../types";
 
@@ -165,6 +166,34 @@ export async function removeKnowledgeDocument(token: string, documentId: string)
     `${API_BASE_URL}/api/v1/admin/knowledge/documents/${documentId}`,
     { method: "DELETE", headers: authHeaders(token) },
   );
+  if (!response.ok) {
+    throw new ApiError(await readError(response), response.status);
+  }
+}
+
+export function listMemories(token: string): Promise<MemoryItem[]> {
+  return requestJson<MemoryItem[]>("/api/v1/memories", {
+    headers: authHeaders(token),
+  });
+}
+
+export function updateMemory(
+  token: string,
+  memoryId: string,
+  content: string,
+): Promise<MemoryItem> {
+  return requestJson<MemoryItem>(`/api/v1/memories/${memoryId}`, {
+    method: "PATCH",
+    headers: authHeaders(token),
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function deleteMemory(token: string, memoryId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/memories/${memoryId}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
   if (!response.ok) {
     throw new ApiError(await readError(response), response.status);
   }

@@ -78,3 +78,19 @@ export type KnowledgeDocument = {
   created_at: string;
   updated_at: string;
 };
+
+export type MemoryItem = {
+  memory_id: string;
+  device_id: string | null;
+  conversation_id: string | null;
+  memory_type: "profile" | "episodic" | string;
+  memory_key: string;
+  agent_name: string;
+  skill_id: string;
+  content: string;
+  confidence: number;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  expires_at: string | null;
+};

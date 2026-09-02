@@ -18,15 +18,34 @@ class FakeAgent:
     def __init__(self):
         self.calls = []
 
-    def execute_stream(self, query, location_profile=None, user_id=None):
+    def execute_stream(
+        self,
+        query,
+        location_profile=None,
+        user_id=None,
+        conversation_history=None,
+        memory_context="",
+        classified_memories=None,
+    ):
         self.calls.append(
             {
                 "query": query,
                 "location_profile": location_profile,
                 "user_id": user_id,
+                "conversation_history": conversation_history or [],
+                "memory_context": memory_context,
+                "classified_memories": classified_memories or [],
             }
         )
         yield {"type": "trace", "agent": "router_agent", "content": "已完成路由。"}
+        if "故障" in query:
+            yield {
+                "type": "trace",
+                "agent": "diagnosis_agent",
+                "content": "已启用故障诊断 Skill。",
+                "task_mode": "fault_diagnosis",
+                "skill_id": "fault_triage",
+            }
         yield {"type": "answer", "agent": "knowledge_agent", "content": "测试回答"}
 
 
@@ -234,6 +253,9 @@ def test_chat_stream_uses_token_user_and_rejects_forged_identity(tmp_path):
             "query": "生成报告",
             "location_profile": {"city": "上海", "temperature": 26},
             "user_id": "u-1",
+            "conversation_history": [],
+            "memory_context": "",
+            "classified_memories": [],
         }
     ]
 
@@ -296,7 +318,7 @@ def test_city_weather_fallback_uses_authenticated_endpoint(tmp_path, monkeypatch
 
 
 def test_conversation_history_is_persisted_and_isolated(tmp_path):
-    app, _ = build_test_app(tmp_path)
+    app, fake_agent = build_test_app(tmp_path)
     with TestClient(app) as client:
         user_one_token = login(client)
         user_one_headers = {"Authorization": f"Bearer {user_one_token}"}
@@ -315,6 +337,11 @@ def test_conversation_history_is_persisted_and_isolated(tmp_path):
             f"/api/v1/conversations/{conversation_id}",
             headers=user_one_headers,
         )
+        second_stream = client.post(
+            "/api/v1/chat/stream",
+            headers=user_one_headers,
+            json={"query": "那边刷呢？", "conversation_id": conversation_id},
+        )
 
         user_two_token = login(client, "u-2", "SecurePass456")
         user_two_headers = {"Authorization": f"Bearer {user_two_token}"}
@@ -329,6 +356,81 @@ def test_conversation_history_is_persisted_and_isolated(tmp_path):
 
     assert created.status_code == 201
     assert streamed.status_code == 200
+    assert second_stream.status_code == 200
     assert [message["role"] for message in detail.json()["messages"]] == ["user", "assistant"]
+    assert fake_agent.calls[1]["conversation_history"] == [
+        {"role": "user", "content": "主刷怎么维护？"},
+        {"role": "assistant", "content": "测试回答"},
+    ]
     assert forbidden_read.status_code == 404
     assert forbidden_delete.status_code == 404
+
+
+def test_fault_conversation_is_reused_as_account_memory(tmp_path):
+    app, fake_agent = build_test_app(tmp_path)
+    with TestClient(app) as client:
+        token = login(client)
+        headers = {"Authorization": f"Bearer {token}"}
+        first = client.post(
+            "/api/v1/chat/stream",
+            headers=headers,
+            json={"query": "设备出现故障 E3"},
+        )
+        conversation_id = json.loads(first.text.splitlines()[0])["conversation_id"]
+        second = client.post(
+            "/api/v1/chat/stream",
+            headers=headers,
+            json={"query": "继续排查", "conversation_id": conversation_id},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    recalled_content = "\n".join(
+        memory["content"] for memory in fake_agent.calls[1]["classified_memories"]
+    )
+    assert "设备出现故障 E3" in recalled_content
+    assert "测试回答" in recalled_content
+
+
+def test_user_can_manage_only_their_own_profile_memories(tmp_path):
+    app, _ = build_test_app(tmp_path)
+    with TestClient(app) as client:
+        user_one_token = login(client)
+        user_one_headers = {"Authorization": f"Bearer {user_one_token}"}
+        client.post(
+            "/api/v1/chat/stream",
+            headers=user_one_headers,
+            json={"query": "我家有猫，大约 80 平方米，我对噪音比较敏感"},
+        )
+        listed = client.get("/api/v1/memories", headers=user_one_headers)
+        memory = next(
+            item for item in listed.json() if item["memory_key"] == "household_pet"
+        )
+
+        user_two_token = login(client, "u-2", "SecurePass456")
+        user_two_headers = {"Authorization": f"Bearer {user_two_token}"}
+        forbidden = client.patch(
+            f"/api/v1/memories/{memory['memory_id']}",
+            headers=user_two_headers,
+            json={"content": "越权修改"},
+        )
+        updated = client.patch(
+            f"/api/v1/memories/{memory['memory_id']}",
+            headers=user_one_headers,
+            json={"content": "家庭环境中有两只猫"},
+        )
+        removed = client.delete(
+            f"/api/v1/memories/{memory['memory_id']}",
+            headers=user_one_headers,
+        )
+        listed_after_delete = client.get("/api/v1/memories", headers=user_one_headers)
+
+    assert listed.status_code == 200
+    assert len([item for item in listed.json() if item["memory_type"] == "profile"]) == 3
+    assert forbidden.status_code == 404
+    assert updated.json()["content"] == "家庭环境中有两只猫"
+    assert updated.json()["version"] == 2
+    assert removed.status_code == 204
+    assert memory["memory_id"] not in {
+        item["memory_id"] for item in listed_after_delete.json()
+    }

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import json
 import threading
 from collections.abc import Callable, Iterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,13 +30,17 @@ from api.schemas import (
     KnowledgeDocumentResponse,
     KnowledgeUploadRequest,
     LoginRequest,
+    MemoryItemResponse,
+    MemoryUpdateRequest,
     TokenResponse,
 )
 from api.settings import ApiSettings
 from auth.service import AuthService, AuthSettings, AuthenticationError
 from auth.tokens import TokenError
+from memory.profile_extractor import extract_profile_facts
 from storage.auth_repository import AuthRepository
 from storage.conversation_repository import ConversationRepository
+from storage.memory_repository import MemoryRepository, WorkingMemory
 from storage.support_repository import SupportRepository, SupportUser
 from utils.config_handler import agent_config
 from utils.logger_handler import logger
@@ -87,12 +92,16 @@ def create_app(
     support_repository: SupportRepository | None = None,
     auth_repository: AuthRepository | None = None,
     conversation_repository: ConversationRepository | None = None,
+    memory_repository: MemoryRepository | None = None,
     agent_factory: Callable[[], Any] = ReactAgent,
     knowledge_service_factory: Callable[[], Any] | None = None,
 ) -> FastAPI:
     support_repository = support_repository or SupportRepository()
     auth_repository = auth_repository or AuthRepository(support_repository.database_path)
     conversation_repository = conversation_repository or ConversationRepository(
+        support_repository.database_path
+    )
+    memory_repository = memory_repository or MemoryRepository(
         support_repository.database_path
     )
     auth_service = AuthService(
@@ -116,11 +125,23 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         support_repository.seed_business_data(get_abs_path(agent_config["business_seed_path"]))
+        memory_repository.compact_memories()
         if settings.demo_password:
             for user in support_repository.list_users():
                 if auth_repository.get_credential(user.user_id) is None:
                     auth_service.set_password(user.user_id, settings.demo_password)
-        yield
+        async def maintain_memories() -> None:
+            while True:
+                await asyncio.sleep(6 * 60 * 60)
+                memory_repository.compact_memories()
+
+        maintenance_task = asyncio.create_task(maintain_memories())
+        try:
+            yield
+        finally:
+            maintenance_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await maintenance_task
 
     app = FastAPI(
         title="CleanPilot AI 多智能体服务 API",
@@ -131,7 +152,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "DELETE"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
     )
     bearer = HTTPBearer(auto_error=False)
@@ -186,6 +207,23 @@ def create_app(
             updated_at=document.updated_at,
         )
 
+    def serialize_memory(memory: Any) -> MemoryItemResponse:
+        return MemoryItemResponse(
+            memory_id=memory.memory_id,
+            device_id=memory.device_id,
+            conversation_id=memory.conversation_id,
+            memory_type=memory.memory_type,
+            memory_key=memory.memory_key,
+            agent_name=memory.agent_name,
+            skill_id=memory.skill_id,
+            content=memory.content,
+            confidence=memory.confidence,
+            version=memory.version,
+            created_at=memory.created_at,
+            updated_at=memory.updated_at,
+            expires_at=memory.expires_at,
+        )
+
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -210,6 +248,45 @@ def create_app(
             role=identity.role,
             device=support_repository.get_device(identity.user.user_id),
         )
+
+    @app.get("/api/v1/memories", response_model=list[MemoryItemResponse])
+    def list_memories(identity: CurrentIdentity = Depends(current_identity)):
+        return [
+            serialize_memory(memory)
+            for memory in memory_repository.list_active_memories(
+                identity.user.user_id,
+                limit=100,
+            )
+        ]
+
+    @app.patch(
+        "/api/v1/memories/{memory_id}",
+        response_model=MemoryItemResponse,
+    )
+    def update_memory(
+        memory_id: str,
+        payload: MemoryUpdateRequest,
+        identity: CurrentIdentity = Depends(current_identity),
+    ):
+        memory = memory_repository.update_memory_content(
+            identity.user.user_id,
+            memory_id,
+            payload.content,
+        )
+        if memory is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="记忆不存在")
+        return serialize_memory(memory)
+
+    @app.delete(
+        "/api/v1/memories/{memory_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    def delete_memory(
+        memory_id: str,
+        identity: CurrentIdentity = Depends(current_identity),
+    ) -> None:
+        if not memory_repository.delete_user_memory(identity.user.user_id, memory_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="记忆不存在")
 
     @app.post("/api/v1/context/location-weather")
     def resolve_location_weather(
@@ -375,6 +452,10 @@ def create_app(
             conversation_id,
         ):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在")
+        memory_repository.delete_conversation_memory(
+            identity.user.user_id,
+            conversation_id,
+        )
 
     @app.post("/api/v1/chat/stream")
     def stream_chat(
@@ -392,12 +473,47 @@ def create_app(
                     detail="会话不存在",
                 )
             conversation = existing_conversation[0]
+            working_memory = memory_repository.get_working_context(
+                identity.user.user_id,
+                conversation.conversation_id,
+            )
         else:
             conversation = conversation_repository.create_conversation(
                 identity.user.user_id,
                 payload.query,
             )
-        conversation_repository.add_message(
+            working_memory = WorkingMemory(
+                summary="",
+                recent_messages=[],
+                summarized_message_count=0,
+            )
+        device = support_repository.get_device(identity.user.user_id)
+        device_id = device.get("device_id") if device else None
+        profile_memories = memory_repository.list_active_memories(
+            identity.user.user_id,
+            device_id=device_id,
+            memory_type="profile",
+            limit=10,
+        )
+        episodic_memories = memory_repository.list_active_memories(
+            identity.user.user_id,
+            device_id=device_id,
+            memory_type="episodic",
+            limit=10,
+        )
+        memory_sections: list[str] = []
+        if working_memory.summary:
+            memory_sections.append("较早会话摘要：\n" + working_memory.summary)
+        memory_context = "\n\n".join(memory_sections)
+        classified_memories = [
+            {
+                "agent_name": memory.agent_name,
+                "skill_id": memory.skill_id,
+                "content": memory.content,
+            }
+            for memory in [*profile_memories, *episodic_memories]
+        ]
+        user_message = conversation_repository.add_message(
             identity.user.user_id,
             conversation.conversation_id,
             role="user",
@@ -408,6 +524,8 @@ def create_app(
             answer_parts: list[str] = []
             traces: list[str] = []
             active_agent: str | None = None
+            active_task_mode: str | None = None
+            answer_succeeded = False
             try:
                 yield json.dumps(
                     {
@@ -422,11 +540,18 @@ def create_app(
                     payload.query,
                     location_profile=payload.location_profile,
                     user_id=identity.user.user_id,
+                    conversation_history=working_memory.recent_messages,
+                    memory_context=memory_context,
+                    classified_memories=classified_memories,
                 ):
                     active_agent = event.get("agent") or active_agent
+                    active_task_mode = event.get("task_mode") or active_task_mode
                     if event.get("type") == "trace":
                         traces.append(event.get("content", ""))
-                    elif event.get("type") in {"answer", "error"}:
+                    elif event.get("type") == "answer":
+                        answer_succeeded = True
+                        answer_parts.append(event.get("content", ""))
+                    elif event.get("type") == "error":
                         answer_parts.append(event.get("content", ""))
                     yield json.dumps(event, ensure_ascii=False) + "\n"
             except Exception as error:
@@ -440,7 +565,7 @@ def create_app(
             finally:
                 answer = "\n\n".join(part for part in answer_parts if part)
                 if answer:
-                    conversation_repository.add_message(
+                    assistant_message = conversation_repository.add_message(
                         identity.user.user_id,
                         conversation.conversation_id,
                         role="assistant",
@@ -448,6 +573,35 @@ def create_app(
                         traces=traces,
                         agent=active_agent,
                     )
+                    try:
+                        memory_repository.refresh_conversation_summary(
+                            identity.user.user_id,
+                            conversation.conversation_id,
+                        )
+                        if answer_succeeded:
+                            for fact in extract_profile_facts(payload.query):
+                                memory_repository.upsert_profile_fact(
+                                    identity.user.user_id,
+                                    profile_key=fact.key,
+                                    content=fact.content,
+                                    source_message_ids=[user_message.message_id],
+                                    confidence=fact.confidence,
+                                )
+                        if active_task_mode == "fault_diagnosis" and answer_succeeded:
+                            memory_repository.upsert_fault_episode(
+                                identity.user.user_id,
+                                query=payload.query,
+                                answer=answer,
+                                device_id=device_id,
+                                conversation_id=conversation.conversation_id,
+                                source_message_ids=[
+                                    user_message.message_id,
+                                    assistant_message.message_id,
+                                ],
+                            )
+                        memory_repository.compact_memories()
+                    except Exception as error:
+                        logger.exception("对话记忆更新失败：%s", error)
 
         return StreamingResponse(generate_events(), media_type="application/x-ndjson")
 
