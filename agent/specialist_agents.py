@@ -5,12 +5,13 @@ from langchain.agents import create_agent
 from agent.tools.agent_tools import (
     fetch_external_data,
     get_current_month,
+    get_current_device,
     get_user_id,
     get_user_location,
     get_weather,
     rag_summarize,
 )
-from agent.tools.middleware import customer_prompt_switch, log_before_model, monitor_tool
+from agent.tools.middleware import log_before_model, monitor_tool, specialist_prompt_switch
 from model.factory import chat_model
 from utils.prompt_loader import (
     load_customer_prompts,
@@ -45,8 +46,13 @@ class KnowledgeAgent(SpecialistAgent):
             or create_agent(
                 model=chat_model,
                 system_prompt=load_knowledge_prompts(),
-                tools=[rag_summarize, get_user_location, get_weather],
-                middleware=[log_before_model, monitor_tool],
+                tools=[
+                    get_current_device,
+                    rag_summarize,
+                    get_user_location,
+                    get_weather,
+                ],
+                middleware=[log_before_model, monitor_tool, specialist_prompt_switch],
             )
         )
 
@@ -62,7 +68,7 @@ class DiagnosisAgent(SpecialistAgent):
                 model=chat_model,
                 system_prompt=load_diagnosis_prompts(),
                 tools=[rag_summarize, get_user_location, get_weather],
-                middleware=[log_before_model, monitor_tool],
+                middleware=[log_before_model, monitor_tool, specialist_prompt_switch],
             )
         )
 
@@ -85,6 +91,6 @@ class CustomerAgent(SpecialistAgent):
                     get_user_location,
                     get_weather,
                 ],
-                middleware=[log_before_model, monitor_tool, customer_prompt_switch],
+                middleware=[log_before_model, monitor_tool, specialist_prompt_switch],
             )
         )

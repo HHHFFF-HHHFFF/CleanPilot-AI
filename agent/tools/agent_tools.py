@@ -60,6 +60,14 @@ def get_current_month() -> str:
     return date.today().strftime("%Y-%m")
 
 
+@tool(description="查询当前会话用户绑定的设备型号、设备编号、购买日期和保修期限。")
+def get_current_device(user_id: str) -> str:
+    device = _get_support_repository().get_device(user_id)
+    if device is None:
+        return ""
+    return json.dumps(device, ensure_ascii=False)
+
+
 @tool(description="查询指定用户在指定月份的设备使用记录；没有记录时返回空字符串。")
 def fetch_external_data(user_id: str, month: str) -> str:
     record = _get_support_repository().get_usage_record(user_id, month)

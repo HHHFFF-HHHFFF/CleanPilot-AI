@@ -4,6 +4,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 
 from agent.router_agent import RouterAgent
 from agent.specialist_agents import CustomerAgent, DiagnosisAgent, KnowledgeAgent
+from skills.registry import resolve_skill
 
 
 TOOL_DISPLAY_NAMES = {
@@ -12,6 +13,7 @@ TOOL_DISPLAY_NAMES = {
     "get_user_location": "获取当前城市",
     "get_user_id": "获取用户信息",
     "get_current_month": "获取当前日期",
+    "get_current_device": "查询当前设备",
     "fetch_external_data": "查询使用记录",
 }
 
@@ -40,6 +42,11 @@ TOOL_PROCESS_NOTES = {
         "decision": "需要确认时间范围，才能定位对应的使用记录。",
         "running": "正在获取当前时间范围。",
         "completed": "已获得时间范围，准备匹配对应记录。",
+    },
+    "get_current_device": {
+        "decision": "需要确认当前用户绑定的设备型号，才能匹配对应故障资料和排查流程。",
+        "running": "正在查询当前账户绑定的设备信息。",
+        "completed": "已获得设备型号与保修信息，正在匹配对应诊断流程。",
     },
     "fetch_external_data": {
         "decision": "需要查询当前用户的使用记录，为个性化建议提供依据。",
@@ -76,11 +83,18 @@ class ReactAgent:
 
         decision = self.router.route(query)
         specialist = self.specialists[decision.target_agent]
+        skill = resolve_skill(decision.target_agent, decision.task_mode)
         yield {
             "type": "trace",
             "agent": "router_agent",
             "content": f"{decision.reason} 已交由{specialist.display_name}处理。",
         }
+        if skill is not None:
+            yield {
+                "type": "trace",
+                "agent": decision.target_agent,
+                "content": f"已启用{skill.display_name}，将按照标准业务流程执行。",
+            }
 
         runtime_context = {
             "agent_name": decision.target_agent,
@@ -88,6 +102,10 @@ class ReactAgent:
             "customer_mode": decision.task_mode,
             "location_profile": location_profile or {},
             "user_id": user_id or "",
+            "skill_id": skill.skill_id if skill else "",
+            "skill_name": skill.display_name if skill else "",
+            "skill_instruction": skill.instruction if skill else "",
+            "skill_allowed_tools": list(skill.allowed_tools) if skill else [],
         }
 
         for chunk in specialist.stream(query, runtime_context):
