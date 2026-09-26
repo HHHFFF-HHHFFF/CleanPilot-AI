@@ -1,6 +1,13 @@
 # CleanPilot AI：多智能体设备服务平台
 
-面向智能清洁设备售前咨询、使用指导、故障诊断与用户运营场景的企业级多智能体服务平台。项目基于 LangChain `create_agent` 与 LangGraph 构建“调度 Agent + 知识问答、故障诊断、用户运营三个功能 Agent”，结合通义千问、Chroma RAG、SQLite 业务数据、FastAPI 身份认证、React 会话工作台、浏览器授权定位与实时天气，形成从知识运营、任务路由、工具执行到服务结果沉淀的完整业务闭环。
+面向智能清洁设备售前咨询、使用指导、故障诊断与用户运营场景的企业级多智能体服务平台。项目基于 LangChain `create_agent` 与 LangGraph 构建“调度 Agent + 知识问答、故障诊断、用户运营三个功能 Agent”，通过 Chroma 向量召回、FTS5 BM25、RRF 融合与模型精排提升检索质量，并结合语义记忆、受控 Skill、FastAPI 身份认证及 React SSE 流式交互，形成从知识运营、任务路由、工具执行到服务结果沉淀的完整业务闭环。
+
+## 核心成果
+
+- **检索质量**：建立 150 条开发集/冻结测试集，混合精排达到 **Recall@3 96.00%**、**MRR@3 0.8011**；相比纯关键词检索，Recall@3 提升 16 个百分点。
+- **知识可靠性**：以 Chunk 级 SHA-256、稳定向量 ID、状态跟踪和失败重试替代文件级粗粒度去重，支持单片段修复与文件级重建，避免局部失败导致整份文档重复向量化。
+- **可交付能力**：实现 JWT/RBAC、账户数据隔离、分层语义记忆、管理员知识运营和 SSE 逐 Token 输出，并以 **48 条离线 pytest** 覆盖关键权限、检索、记忆及流式协议。
+- **业务闭环**：调度 Agent 自动路由三个功能 Agent，故障诊断和用户运营报告以受控 Skill 执行，工具参数由可信运行时上下文强制绑定，阻止跨账户查询和越权调用。
 
 ## 界面预览
 
@@ -91,7 +98,7 @@
 - FastAPI / Uvicorn / PyJWT
 - PBKDF2-HMAC-SHA256 / Bearer Token
 - React 19 / TypeScript / Vite
-- Streamlit / streamlit-js-eval（内部知识库运营）
+- Streamlit / streamlit-js-eval（兼容保留的内部调试客户端）
 - Open-Meteo / OpenStreetMap Nominatim
 - pytest
 
@@ -148,7 +155,7 @@ python -m rag.vector_store
 # 启动命令行 Agent（可选）
 python -m agent.react_agent
 
-# 启动 Streamlit 前端
+# 启动 Streamlit 内部调试端（可选）
 python -m streamlit run app.py
 
 # 启动 FastAPI，默认地址 http://127.0.0.1:8000
@@ -307,7 +314,7 @@ Streamlit 客服页目前仍可作为内部调试入口；正式用户和管理�
 ├── data/                          # 知识库文件与业务演示数据源
 ├── docs/                          # 交付路线图
 ├── evals/                         # RAG 评测案例、脚本与报告输出
-├── memory/                        # 低敏感用户画像的规则化提取
+├── memory/                        # LLM 语义摘要、结构化画像与记忆编排
 ├── model/                         # 通义千问 Chat / Embedding 工厂
 ├── prompts/                       # 调度、三个功能 Agent、RAG 和报告 Prompt
 ├── rag/                           # 知识库入库、检索与 RAG 服务
@@ -315,9 +322,9 @@ Streamlit 客服页目前仍可作为内部调试入口；正式用户和管理�
 ├── skills/                        # 故障诊断、月度报告等可复用业务 SOP
 ├── storage/                       # SQLite 仓储：会话、分层记忆、业务数据与登录凭证
 ├── tests/                         # 离线单元测试
-├── ui/                            # Streamlit 知识库运营页面
+├── ui/                            # 兼容保留的 Streamlit 内部调试组件
 ├── utils/                         # 定位天气、配置、安全扫描等工具
-├── web/                           # React 登录、设备概览与流式对话用户端
+├── web/                           # React 登录、会话、记忆、知识运营与 SSE 流式交互端
 └── requirements.txt
 ```
 
@@ -328,7 +335,7 @@ Streamlit 客服页目前仍可作为内部调试入口；正式用户和管理�
 ## 后续方向
 
 - 增加知识文件的定时增量导入、审计日志和内容所有者审核工作流。
-- 增加 React 设备详情、历史报告与账户设置页面，将 Streamlit 完全降级为内部运营工具。
+- 增加 React 设备详情、历史报告与账户设置页面，进一步收敛旧版 Streamlit 调试入口。
 - 增加刷新令牌、登录限流、审计日志和账户管理流程，并接入真实工单/CRM 系统。
 - 在现有检索消融评测基础上，增加工具调用成功率、答案忠实度、用户反馈和生产环境监控。
 - 为故障诊断 Agent 增加图片报警码、设备部件和 App 截图的多模态识别。
