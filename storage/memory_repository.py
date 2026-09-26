@@ -6,6 +6,7 @@ import hashlib
 import json
 import sqlite3
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -167,7 +168,8 @@ class MemoryRepository:
         conversation_id: str,
         *,
         retain_recent: int = 8,
-        max_chars: int = 2000,
+        max_chars: int = 4000,
+        summarizer: Callable[[str, list[dict[str, str]]], str] | None = None,
     ) -> WorkingMemory:
         with self._connect() as connection:
             rows = connection.execute(
@@ -186,16 +188,32 @@ class MemoryRepository:
             ).fetchone() is None:
                 raise PermissionError("会话不存在或无权访问")
 
+            existing_summary = connection.execute(
+                """
+                SELECT summary, summarized_message_count
+                FROM conversation_memory_summaries
+                WHERE conversation_id = ? AND user_id = ?
+                """,
+                (conversation_id, user_id),
+            ).fetchone()
+            previous_summary = existing_summary["summary"] if existing_summary else ""
+            previous_count = existing_summary["summarized_message_count"] if existing_summary else 0
             split_at = max(0, len(rows) - max(0, retain_recent))
-            older_rows = rows[:split_at]
-            summary_lines = [
-                f"{'用户' if row['role'] == 'user' else '客服'}：{row['content'].strip()}"
-                for row in older_rows
-                if row["content"].strip()
-            ]
-            summary = "\n".join(summary_lines)
+            new_rows = rows[min(previous_count, split_at) : split_at]
+            new_messages = [dict(row) for row in new_rows if row["content"].strip()]
+            if summarizer is not None:
+                summary = summarizer(previous_summary, new_messages)
+            else:
+                summary_lines = [previous_summary] if previous_summary else []
+                summary_lines.extend(
+                    f"{'用户' if row['role'] == 'user' else '客服'}：{row['content'].strip()}"
+                    for row in new_rows
+                    if row["content"].strip()
+                )
+                summary = "\n".join(summary_lines)
+            summary = summary.strip()
             if len(summary) > max_chars:
-                summary = "…" + summary[-max_chars:]
+                summary = summary[:max_chars]
             now = datetime.now(timezone.utc).isoformat()
             connection.execute(
                 """
@@ -209,7 +227,7 @@ class MemoryRepository:
                     summarized_message_count = excluded.summarized_message_count,
                     updated_at = excluded.updated_at
                 """,
-                (conversation_id, user_id, summary, len(older_rows), now),
+                (conversation_id, user_id, summary, split_at, now),
             )
 
         return self.get_working_context(

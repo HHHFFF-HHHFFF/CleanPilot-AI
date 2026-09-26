@@ -72,11 +72,12 @@ def test_react_agent_delegates_to_selected_specialist_with_runtime_context():
     assert specialist.calls[0][1]["skill_id"] == "monthly_usage_report"
     assert "fetch_external_data" in specialist.calls[0][1]["skill_allowed_tools"]
     assert "用户月度运营报告 Skill" in events[2]["content"]
-    assert events[-1] == {
-        "type": "answer",
+    assert events[-2] == {
+        "type": "answer_delta",
         "agent": "customer_agent",
         "content": "测试回答",
     }
+    assert events[-1]["type"] == "answer_end"
     assert events[2]["task_mode"] == "usage_report"
     assert events[2]["skill_id"] == "monthly_usage_report"
 

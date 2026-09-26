@@ -54,8 +54,9 @@ class SpecialistAgent:
         input_dict = {"messages": messages}
         return self.agent.stream(
             input_dict,
-            stream_mode="values",
+            stream_mode=["messages", "updates"],
             context=runtime_context,
+            version="v2",
         )
 
 

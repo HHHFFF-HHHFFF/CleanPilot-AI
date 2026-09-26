@@ -9,6 +9,7 @@ from api.settings import ApiSettings
 from auth.service import AuthService, AuthSettings
 from storage.auth_repository import AuthRepository
 from storage.support_repository import SupportRepository
+from memory.profile_extractor import extract_profile_facts
 
 
 JWT_SECRET = "test-secret-that-is-longer-than-thirty-two-characters"
@@ -46,7 +47,19 @@ class FakeAgent:
                 "task_mode": "fault_diagnosis",
                 "skill_id": "fault_triage",
             }
-        yield {"type": "answer", "agent": "knowledge_agent", "content": "测试回答"}
+        yield {"type": "answer_start", "agent": "knowledge_agent", "content": ""}
+        yield {"type": "answer_delta", "agent": "knowledge_agent", "content": "测试"}
+        yield {"type": "answer_delta", "agent": "knowledge_agent", "content": "回答"}
+        yield {"type": "answer_end", "agent": "knowledge_agent", "content": ""}
+
+
+class FakeSemanticMemoryService:
+    def summarize(self, previous_summary, messages):
+        additions = "\n".join(message["content"] for message in messages)
+        return "\n".join(part for part in (previous_summary, additions) if part)
+
+    def extract_profile_facts(self, text):
+        return extract_profile_facts(text)
 
 
 class FakeKnowledgeService:
@@ -64,6 +77,18 @@ class FakeKnowledgeService:
         )
         self.uploaded = None
         self.removed = None
+        self.chunk = {
+            "chunk_id": "chunk-1",
+            "content_hash": "hash-1",
+            "content": "测试知识片段",
+            "status": "failed",
+            "failure_reason": "network",
+            "retry_count": 1,
+            "chunk_order": 0,
+            "page": None,
+            "source_name": "manual.txt",
+            "updated_at": "2026-08-31T10:00:00+00:00",
+        }
 
     def list_documents(self):
         return [self.document]
@@ -80,6 +105,17 @@ class FakeKnowledgeService:
 
     def remove_from_index(self, document_id):
         self.removed = document_id
+
+    def list_document_chunks(self, document_id):
+        if document_id != self.document.document_id:
+            raise ValueError("未找到知识库文档")
+        return [self.chunk]
+
+    def retry_chunk(self, chunk_id):
+        if chunk_id != self.chunk["chunk_id"]:
+            raise ValueError("未找到知识片段")
+        self.chunk = {**self.chunk, "status": "indexed", "failure_reason": None}
+        return self.chunk
 
 
 def build_test_app(tmp_path):
@@ -119,6 +155,7 @@ def build_test_app(tmp_path):
         auth_repository=auth_repository,
         agent_factory=lambda: fake_agent,
         knowledge_service_factory=lambda: fake_knowledge_service,
+        semantic_memory_service=FakeSemanticMemoryService(),
     )
     return app, fake_agent
 
@@ -130,6 +167,17 @@ def login(client: TestClient, user_id="u-1", password="SecurePass123") -> str:
     )
     assert response.status_code == 200
     return response.json()["access_token"]
+
+
+def parse_sse_events(text):
+    events = []
+    for block in text.replace("\r\n", "\n").split("\n\n"):
+        data = "\n".join(
+            line[5:].lstrip() for line in block.splitlines() if line.startswith("data:")
+        )
+        if data:
+            events.append(json.loads(data))
+    return events
 
 
 def test_login_and_current_user_endpoint(tmp_path):
@@ -181,6 +229,14 @@ def test_knowledge_admin_endpoints_enforce_role_and_manage_documents(tmp_path):
             "/api/v1/admin/knowledge/documents/doc-1/retry",
             headers=headers,
         )
+        chunks = client.get(
+            "/api/v1/admin/knowledge/documents/doc-1/chunks",
+            headers=headers,
+        )
+        retried_chunk = client.post(
+            "/api/v1/admin/knowledge/chunks/chunk-1/retry",
+            headers=headers,
+        )
         removed = client.delete(
             "/api/v1/admin/knowledge/documents/doc-1",
             headers=headers,
@@ -192,6 +248,8 @@ def test_knowledge_admin_endpoints_enforce_role_and_manage_documents(tmp_path):
     assert synchronized.status_code == 200
     assert uploaded.status_code == 200
     assert retried.status_code == 200
+    assert chunks.json()[0]["status"] == "failed"
+    assert retried_chunk.json()["status"] == "indexed"
     assert removed.status_code == 204
 
 
@@ -245,9 +303,11 @@ def test_chat_stream_uses_token_user_and_rejects_forged_identity(tmp_path):
         )
 
     assert rejected.status_code == 422
-    events = [json.loads(line) for line in response.text.splitlines()]
+    events = parse_sse_events(response.text)
     assert response.status_code == 200
-    assert events[-1]["content"] == "测试回答"
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "".join(event["content"] for event in events if event["type"] == "answer_delta") == "测试回答"
+    assert events[-1]["type"] == "answer_end"
     assert fake_agent.calls == [
         {
             "query": "生成报告",
@@ -376,7 +436,7 @@ def test_fault_conversation_is_reused_as_account_memory(tmp_path):
             headers=headers,
             json={"query": "设备出现故障 E3"},
         )
-        conversation_id = json.loads(first.text.splitlines()[0])["conversation_id"]
+        conversation_id = parse_sse_events(first.text)[0]["conversation_id"]
         second = client.post(
             "/api/v1/chat/stream",
             headers=headers,

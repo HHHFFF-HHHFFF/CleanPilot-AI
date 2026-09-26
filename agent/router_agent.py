@@ -15,8 +15,10 @@ class RouterAgent:
         self.agent = compiled_agent or create_agent(
             model=chat_model,
             tools=[],
-            system_prompt=load_router_prompts(),
-            response_format=RoutingDecision,
+            system_prompt=(
+                load_router_prompts()
+                + "\n只输出一个 JSON 对象，不要使用 Markdown。字段为 target_agent、task_mode、reason。"
+            ),
         )
 
     def route(self, query: str) -> RoutingDecision:
@@ -24,10 +26,6 @@ class RouterAgent:
             result = self.agent.invoke(
                 {"messages": [{"role": "user", "content": query}]}
             )
-            structured_response = result.get("structured_response")
-            if structured_response is not None:
-                return RoutingDecision.model_validate(structured_response)
-
             messages = result.get("messages", [])
             if messages:
                 return self._parse_text_response(messages[-1].content)

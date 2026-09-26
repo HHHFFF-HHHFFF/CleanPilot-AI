@@ -88,6 +88,19 @@ class KnowledgeDocumentResponse(BaseModel):
     updated_at: str
 
 
+class KnowledgeChunkResponse(BaseModel):
+    chunk_id: str
+    content_hash: str
+    content: str
+    status: str
+    failure_reason: str | None
+    retry_count: int
+    chunk_order: int
+    page: int | None
+    source_name: str
+    updated_at: str
+
+
 class KnowledgeUploadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

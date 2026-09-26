@@ -1,6 +1,6 @@
 from typing import Any
 
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 
 from agent.router_agent import RouterAgent
 from agent.specialist_agents import CustomerAgent, DiagnosisAgent, KnowledgeAgent
@@ -130,13 +130,35 @@ class ReactAgent:
                 section for section in [memory_context, scoped_section] if section
             )
 
+        streamed_answer = False
+        final_content = ""
+        yield {
+            "type": "answer_start",
+            "agent": decision.target_agent,
+            "content": "",
+        }
         for chunk in specialist.stream(
             query,
             runtime_context,
             conversation_history=conversation_history,
             memory_context=scoped_memory_context,
         ):
-            latest_message = chunk["messages"][-1]
+            if isinstance(chunk, dict) and chunk.get("type") == "messages":
+                message_chunk, _metadata = chunk.get("data", (None, {}))
+                content = self._message_content(message_chunk)
+                if isinstance(message_chunk, AIMessageChunk) and content:
+                    streamed_answer = True
+                    final_content += content
+                    yield {
+                        "type": "answer_delta",
+                        "agent": decision.target_agent,
+                        "content": content,
+                    }
+                continue
+
+            latest_message = self._latest_update_message(chunk)
+            if latest_message is None:
+                continue
             content = (
                 latest_message.content.strip()
                 if isinstance(latest_message.content, str)
@@ -174,16 +196,55 @@ class ReactAgent:
                         "content": f"执行：{process_note.get('running', f'正在调用{tool_name}。')}",
                     }
             elif isinstance(latest_message, AIMessage) and content:
+                final_content = content
                 yield {
                     "type": "trace",
                     "agent": decision.target_agent,
                     "content": f"{specialist.display_name}已完成信息核验与整合。",
                 }
-                yield {
-                    "type": "answer",
-                    "agent": decision.target_agent,
-                    "content": content,
-                }
+        if not streamed_answer and final_content:
+            yield {
+                "type": "answer_delta",
+                "agent": decision.target_agent,
+                "content": final_content,
+            }
+        yield {
+            "type": "answer_end",
+            "agent": decision.target_agent,
+            "content": "",
+        }
+
+    @staticmethod
+    def _message_content(message: Any) -> str:
+        if message is None:
+            return ""
+        content = getattr(message, "content", "")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return "".join(
+                str(block.get("text", ""))
+                for block in content
+                if isinstance(block, dict) and block.get("type") in {"text", "output_text"}
+            )
+        return ""
+
+    @staticmethod
+    def _latest_update_message(chunk: Any) -> Any | None:
+        if not isinstance(chunk, dict):
+            return None
+        if "messages" in chunk:
+            messages = chunk.get("messages") or []
+            return messages[-1] if messages else None
+        if chunk.get("type") != "updates":
+            return None
+        data = chunk.get("data", {})
+        if not isinstance(data, dict):
+            return None
+        for update in reversed(list(data.values())):
+            if isinstance(update, dict) and update.get("messages"):
+                return update["messages"][-1]
+        return None
 
 
 if __name__ == "__main__":

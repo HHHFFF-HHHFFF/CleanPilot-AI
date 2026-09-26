@@ -28,6 +28,7 @@ from api.schemas import (
     CreateConversationRequest,
     CurrentUserResponse,
     KnowledgeDocumentResponse,
+    KnowledgeChunkResponse,
     KnowledgeUploadRequest,
     LoginRequest,
     MemoryItemResponse,
@@ -37,7 +38,7 @@ from api.schemas import (
 from api.settings import ApiSettings
 from auth.service import AuthService, AuthSettings, AuthenticationError
 from auth.tokens import TokenError
-from memory.profile_extractor import extract_profile_facts
+from memory.semantic_memory import SemanticMemoryService
 from storage.auth_repository import AuthRepository
 from storage.conversation_repository import ConversationRepository
 from storage.memory_repository import MemoryRepository, WorkingMemory
@@ -95,6 +96,7 @@ def create_app(
     memory_repository: MemoryRepository | None = None,
     agent_factory: Callable[[], Any] = ReactAgent,
     knowledge_service_factory: Callable[[], Any] | None = None,
+    semantic_memory_service: Any | None = None,
 ) -> FastAPI:
     support_repository = support_repository or SupportRepository()
     auth_repository = auth_repository or AuthRepository(support_repository.database_path)
@@ -104,6 +106,7 @@ def create_app(
     memory_repository = memory_repository or MemoryRepository(
         support_repository.database_path
     )
+    semantic_memory_service = semantic_memory_service or SemanticMemoryService()
     auth_service = AuthService(
         auth_repository,
         AuthSettings(
@@ -119,7 +122,7 @@ def create_app(
             from rag.knowledge_service import KnowledgeBaseService
             from rag.vector_store import VectorStoreService
 
-            return KnowledgeBaseService(VectorStoreService(), support_repository)
+            return KnowledgeBaseService(VectorStoreService(support_repository), support_repository)
     knowledge_service_provider = KnowledgeServiceProvider(knowledge_service_factory)
 
     @asynccontextmanager
@@ -380,6 +383,34 @@ def create_app(
                 detail=str(error),
             ) from error
 
+    @app.get(
+        "/api/v1/admin/knowledge/documents/{document_id}/chunks",
+        response_model=list[KnowledgeChunkResponse],
+    )
+    def list_knowledge_chunks(
+        document_id: str,
+        _: CurrentIdentity = Depends(admin_identity),
+    ):
+        try:
+            return knowledge_service_provider.get().list_document_chunks(document_id)
+        except ValueError as error:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+    @app.post(
+        "/api/v1/admin/knowledge/chunks/{chunk_id}/retry",
+        response_model=KnowledgeChunkResponse,
+    )
+    def retry_knowledge_chunk(
+        chunk_id: str,
+        _: CurrentIdentity = Depends(admin_identity),
+    ):
+        try:
+            return knowledge_service_provider.get().retry_chunk(chunk_id)
+        except ValueError as error:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
+
     @app.delete(
         "/api/v1/admin/knowledge/documents/{document_id}",
         status_code=status.HTTP_204_NO_CONTENT,
@@ -520,6 +551,12 @@ def create_app(
             content=payload.query,
         )
 
+        def encode_sse(event: dict[str, Any]) -> str:
+            return (
+                f"event: {event.get('type', 'message')}\n"
+                f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            )
+
         def generate_events() -> Iterator[str]:
             answer_parts: list[str] = []
             traces: list[str] = []
@@ -527,14 +564,13 @@ def create_app(
             active_task_mode: str | None = None
             answer_succeeded = False
             try:
-                yield json.dumps(
+                yield encode_sse(
                     {
                         "type": "conversation",
                         "conversation_id": conversation.conversation_id,
                         "content": conversation.title,
-                    },
-                    ensure_ascii=False,
-                ) + "\n"
+                    }
+                )
                 agent = agent_provider.get()
                 for event in agent.execute_stream(
                     payload.query,
@@ -548,22 +584,22 @@ def create_app(
                     active_task_mode = event.get("task_mode") or active_task_mode
                     if event.get("type") == "trace":
                         traces.append(event.get("content", ""))
-                    elif event.get("type") == "answer":
-                        answer_succeeded = True
+                    elif event.get("type") == "answer_delta":
                         answer_parts.append(event.get("content", ""))
+                    elif event.get("type") in {"answer", "answer_end"}:
+                        answer_succeeded = True
+                        if event.get("type") == "answer":
+                            answer_parts.append(event.get("content", ""))
                     elif event.get("type") == "error":
                         answer_parts.append(event.get("content", ""))
-                    yield json.dumps(event, ensure_ascii=False) + "\n"
+                    yield encode_sse(event)
             except Exception as error:
                 logger.exception("流式对话处理失败：%s", error)
                 error_message = "服务暂时不可用，请稍后重试。"
                 answer_parts.append(error_message)
-                yield json.dumps(
-                    {"type": "error", "content": error_message},
-                    ensure_ascii=False,
-                ) + "\n"
+                yield encode_sse({"type": "error", "content": error_message})
             finally:
-                answer = "\n\n".join(part for part in answer_parts if part)
+                answer = "".join(part for part in answer_parts if part)
                 if answer:
                     assistant_message = conversation_repository.add_message(
                         identity.user.user_id,
@@ -577,9 +613,10 @@ def create_app(
                         memory_repository.refresh_conversation_summary(
                             identity.user.user_id,
                             conversation.conversation_id,
+                            summarizer=semantic_memory_service.summarize,
                         )
                         if answer_succeeded:
-                            for fact in extract_profile_facts(payload.query):
+                            for fact in semantic_memory_service.extract_profile_facts(payload.query):
                                 memory_repository.upsert_profile_fact(
                                     identity.user.user_id,
                                     profile_key=fact.key,
@@ -603,6 +640,14 @@ def create_app(
                     except Exception as error:
                         logger.exception("对话记忆更新失败：%s", error)
 
-        return StreamingResponse(generate_events(), media_type="application/x-ndjson")
+        return StreamingResponse(
+            generate_events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
 
     return app
