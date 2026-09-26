@@ -32,7 +32,7 @@ export type LocationProfile = {
 };
 
 export type AgentEvent = {
-  type: "conversation" | "trace" | "answer" | "error";
+  type: "conversation" | "trace" | "answer_start" | "answer_delta" | "answer_end" | "answer" | "error";
   agent?: string;
   conversation_id?: string;
   content: string;
@@ -76,6 +76,19 @@ export type KnowledgeDocument = {
   risk_level: string;
   failure_reason: string | null;
   created_at: string;
+  updated_at: string;
+};
+
+export type KnowledgeChunk = {
+  chunk_id: string;
+  content_hash: string;
+  content: string;
+  status: "indexed" | "failed" | "pending" | string;
+  failure_reason: string | null;
+  retry_count: number;
+  chunk_order: number;
+  page: number | null;
+  source_name: string;
   updated_at: string;
 };
 

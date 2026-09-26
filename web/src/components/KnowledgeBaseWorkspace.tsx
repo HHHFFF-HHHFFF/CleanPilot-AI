@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   ApiError,
+  listKnowledgeChunks,
   listKnowledgeDocuments,
   removeKnowledgeDocument,
   retryKnowledgeDocument,
+  retryKnowledgeChunk,
   synchronizeKnowledgeDocuments,
   uploadKnowledgeDocument,
 } from "../lib/api";
-import type { CurrentUser, KnowledgeDocument } from "../types";
+import type { CurrentUser, KnowledgeChunk, KnowledgeDocument } from "../types";
 import {
   ArrowLeftIcon,
   DatabaseIcon,
@@ -29,6 +31,8 @@ type KnowledgeBaseWorkspaceProps = {
 
 const STATUS_LABELS: Record<string, string> = {
   indexed: "已入库",
+  indexing: "正在入库",
+  partial: "部分成功",
   failed: "入库失败",
   blocked: "安全拦截",
   removed: "已移除",
@@ -53,6 +57,8 @@ export function KnowledgeBaseWorkspace({
   const [loading, setLoading] = useState(true);
   const [activeAction, setActiveAction] = useState("");
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [expandedDocumentId, setExpandedDocumentId] = useState<string | null>(null);
+  const [chunksByDocument, setChunksByDocument] = useState<Record<string, KnowledgeChunk[]>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleError = useCallback((error: unknown) => {
@@ -129,6 +135,44 @@ export function KnowledgeBaseWorkspace({
           ? `${updated.filename} 已重新入库。`
           : updated.failure_reason || "重新入库失败。",
       });
+    } catch (error) {
+      handleError(error);
+    } finally {
+      setActiveAction("");
+    }
+  }
+
+  async function toggleChunks(documentId: string) {
+    if (expandedDocumentId === documentId) {
+      setExpandedDocumentId(null);
+      return;
+    }
+    setExpandedDocumentId(documentId);
+    if (chunksByDocument[documentId]) return;
+    setActiveAction(`chunks:${documentId}`);
+    try {
+      const chunks = await listKnowledgeChunks(token, documentId);
+      setChunksByDocument((current) => ({ ...current, [documentId]: chunks }));
+    } catch (error) {
+      handleError(error);
+    } finally {
+      setActiveAction("");
+    }
+  }
+
+  async function retryChunk(documentId: string, chunk: KnowledgeChunk) {
+    setActiveAction(`chunk:${chunk.chunk_id}`);
+    setNotice(null);
+    try {
+      const updated = await retryKnowledgeChunk(token, chunk.chunk_id);
+      setChunksByDocument((current) => ({
+        ...current,
+        [documentId]: (current[documentId] || []).map((item) => (
+          item.chunk_id === updated.chunk_id ? updated : item
+        )),
+      }));
+      await loadDocuments();
+      setNotice({ type: "success", text: `片段 #${chunk.chunk_order + 1} 已重新入库。` });
     } catch (error) {
       handleError(error);
     } finally {
@@ -221,7 +265,8 @@ export function KnowledgeBaseWorkspace({
                 <thead><tr><th>文件</th><th>状态</th><th>片段</th><th>风险</th><th>更新时间</th><th>操作</th></tr></thead>
                 <tbody>
                   {documents.map((document) => (
-                    <tr key={document.document_id}>
+                    <Fragment key={document.document_id}>
+                    <tr>
                       <td><strong>{document.filename}</strong>{document.failure_reason && <small>{document.failure_reason}</small>}</td>
                       <td><span className={`document-status document-status--${document.status}`}>{STATUS_LABELS[document.status] || document.status}</span></td>
                       <td>{document.chunk_count}</td>
@@ -229,11 +274,47 @@ export function KnowledgeBaseWorkspace({
                       <td>{formatTime(document.updated_at)}</td>
                       <td>
                         <div className="document-actions">
+                          <button type="button" onClick={() => void toggleChunks(document.document_id)} disabled={Boolean(activeAction)}>
+                            {expandedDocumentId === document.document_id ? "收起片段" : "查看片段"}
+                          </button>
                           <button type="button" onClick={() => void retry(document)} disabled={Boolean(activeAction)}><RefreshIcon /> {activeAction === `retry:${document.document_id}` ? "处理中" : "重新入库"}</button>
                           <button type="button" className="danger-action" onClick={() => void remove(document)} disabled={Boolean(activeAction) || document.status === "removed"}><TrashIcon /> 移除</button>
                         </div>
                       </td>
                     </tr>
+                    {expandedDocumentId === document.document_id && (
+                      <tr className="chunk-detail-row">
+                        <td colSpan={6}>
+                          {activeAction === `chunks:${document.document_id}` ? (
+                            <div className="chunk-empty">正在读取片段状态…</div>
+                          ) : (
+                            <div className="chunk-list">
+                              {(chunksByDocument[document.document_id] || []).map((chunk) => (
+                                <article className="chunk-card" key={`${chunk.chunk_id}:${chunk.chunk_order}`}>
+                                  <div className="chunk-card-heading">
+                                    <strong>片段 #{chunk.chunk_order + 1}</strong>
+                                    <span className={`document-status document-status--${chunk.status}`}>{STATUS_LABELS[chunk.status] || chunk.status}</span>
+                                  </div>
+                                  <p>{chunk.content}</p>
+                                  <div className="chunk-meta">
+                                    <span>Hash {chunk.content_hash.slice(0, 12)}</span>
+                                    <span>重试 {chunk.retry_count} 次</span>
+                                    {chunk.page !== null && <span>第 {chunk.page + 1} 页</span>}
+                                  </div>
+                                  {chunk.failure_reason && <small>{chunk.failure_reason}</small>}
+                                  {chunk.status !== "indexed" && (
+                                    <button type="button" onClick={() => void retryChunk(document.document_id, chunk)} disabled={Boolean(activeAction)}>
+                                      <RefreshIcon /> {activeAction === `chunk:${chunk.chunk_id}` ? "正在重试" : "重试此片段"}
+                                    </button>
+                                  )}
+                                </article>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

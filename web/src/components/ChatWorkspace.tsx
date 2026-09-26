@@ -179,12 +179,15 @@ export function ChatWorkspace({ token, user, onLogout, onOpenMemories, onOpenKno
       if (event.type === "trace") {
         return { ...message, traces: [...(message.traces || []), event.content], agent: event.agent };
       }
-      if (event.type === "answer") {
+      if (event.type === "answer_delta" || event.type === "answer") {
         return {
           ...message,
-          content: `${message.content}${message.content ? "\n\n" : ""}${event.content}`,
+          content: `${message.content}${event.content}`,
           agent: event.agent,
         };
+      }
+      if (event.type === "answer_start" || event.type === "answer_end") {
+        return { ...message, agent: event.agent || message.agent };
       }
       return { ...message, content: event.content, error: true };
     }));

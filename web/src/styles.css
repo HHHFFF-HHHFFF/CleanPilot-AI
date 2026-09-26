@@ -1723,6 +1723,79 @@ button:disabled {
   display: block;
 }
 
+.chunk-detail-row td {
+  background: #f7fafc;
+  padding: 18px 20px;
+}
+
+.chunk-list {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.chunk-card {
+  background: #fff;
+  border: 1px solid #dce5ec;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.chunk-card-heading,
+.chunk-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.chunk-card p {
+  color: #344658;
+  display: -webkit-box;
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 12px 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.chunk-meta {
+  color: #718096;
+  font-size: 11px;
+  justify-content: flex-start;
+}
+
+.chunk-card > small {
+  color: #c53030;
+  display: block;
+  margin-top: 8px;
+}
+
+.chunk-card > button {
+  align-items: center;
+  background: #eefaf8;
+  border: 1px solid #b8ebe4;
+  border-radius: 8px;
+  color: #087f71;
+  display: inline-flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 7px 10px;
+}
+
+.chunk-card > button svg {
+  height: 14px;
+  width: 14px;
+}
+
+.chunk-empty {
+  color: #718096;
+  padding: 12px;
+  text-align: center;
+}
+
 .knowledge-table td strong {
   color: #364356;
   font-size: 0.68rem;

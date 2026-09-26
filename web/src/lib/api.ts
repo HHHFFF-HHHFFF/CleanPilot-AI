@@ -3,6 +3,7 @@ import type {
   ConversationDetail,
   ConversationSummary,
   CurrentUser,
+  KnowledgeChunk,
   KnowledgeDocument,
   LocationProfile,
   MemoryItem,
@@ -161,6 +162,20 @@ export function retryKnowledgeDocument(
   );
 }
 
+export function listKnowledgeChunks(token: string, documentId: string): Promise<KnowledgeChunk[]> {
+  return requestJson<KnowledgeChunk[]>(
+    `/api/v1/admin/knowledge/documents/${documentId}/chunks`,
+    { headers: authHeaders(token) },
+  );
+}
+
+export function retryKnowledgeChunk(token: string, chunkId: string): Promise<KnowledgeChunk> {
+  return requestJson<KnowledgeChunk>(`/api/v1/admin/knowledge/chunks/${chunkId}/retry`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
 export async function removeKnowledgeDocument(token: string, documentId: string): Promise<void> {
   const response = await fetch(
     `${API_BASE_URL}/api/v1/admin/knowledge/documents/${documentId}`,
@@ -228,15 +243,23 @@ export async function streamChat(options: {
   const decoder = new TextDecoder();
   let bufferedText = "";
 
+  function consumeEventBlock(block: string) {
+    const dataLines = block
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart());
+    if (dataLines.length) {
+      options.onEvent(JSON.parse(dataLines.join("\n")) as AgentEvent);
+    }
+  }
+
   while (true) {
     const { done, value } = await reader.read();
     bufferedText += decoder.decode(value, { stream: !done });
-    const lines = bufferedText.split("\n");
-    bufferedText = lines.pop() || "";
-    for (const line of lines) {
-      if (line.trim()) {
-        options.onEvent(JSON.parse(line) as AgentEvent);
-      }
+    const blocks = bufferedText.replace(/\r\n/g, "\n").split("\n\n");
+    bufferedText = blocks.pop() || "";
+    for (const block of blocks) {
+      if (block.trim()) consumeEventBlock(block);
     }
     if (done) {
       break;
@@ -244,6 +267,6 @@ export async function streamChat(options: {
   }
 
   if (bufferedText.trim()) {
-    options.onEvent(JSON.parse(bufferedText) as AgentEvent);
+    consumeEventBlock(bufferedText);
   }
 }
