@@ -2,7 +2,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from evals.rag_retrieval import RetrievalCase, build_report, evaluate_retrieval, load_cases, source_name
+from evals.rag_retrieval import (
+    RetrievalCase,
+    build_report,
+    evaluate_retrieval,
+    load_cases,
+    metric_summary,
+    source_name,
+)
 
 
 class FakeRetriever:
@@ -20,9 +27,12 @@ def document(source):
 def test_load_cases_loads_the_project_dataset():
     cases = load_cases()
 
-    assert len(cases) >= 15
+    assert len(cases) == 150
     assert len({case.case_id for case in cases}) == len(cases)
     assert all(case.expected_sources for case in cases)
+    assert {case.split for case in cases} == {"dev", "test"}
+    assert sum(case.split == "dev" for case in cases) == 100
+    assert sum(case.split == "test" for case in cases) == 50
 
 
 def test_load_cases_rejects_duplicate_ids(tmp_path):
@@ -59,3 +69,23 @@ def test_evaluate_retrieval_calculates_recall_and_mrr():
 
     assert report["summary"] == {"case_count": 3, "recall_at_3": 0.6667, "mrr": 0.5, "hit_count": 2}
     assert [case["case_id"] for case in report["failed_cases"]] == ["miss"]
+
+
+def test_metric_summary_reports_multiple_cutoffs_and_ndcg():
+    cases = [
+        RetrievalCase("first", "q1", ("选购指南.txt",)),
+        RetrievalCase("second", "q2", ("故障排除.txt",)),
+    ]
+    retriever = FakeRetriever(
+        {
+            "q1": [document("data/选购指南.txt")],
+            "q2": [document("data/无关.txt"), document("data/故障排除.txt")],
+        }
+    )
+
+    summary = metric_summary(evaluate_retrieval(cases, retriever), (1, 3))
+
+    assert summary["recall_at_1"] == 0.5
+    assert summary["recall_at_3"] == 1.0
+    assert summary["mrr_at_3"] == 0.75
+    assert 0 < summary["ndcg_at_3"] <= 1

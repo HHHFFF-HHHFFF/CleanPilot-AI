@@ -1,6 +1,13 @@
 collection_name: agent
 persist_directory: chroma_db
 k: 3
+vector_k: 20
+keyword_k: 20
+fusion_k: 10
+rrf_constant: 60
+rerank_enabled: true
+rerank_model: qwen3-rerank
+embedding_batch_size: 16
 data_path: data
 allow_knowledge_file_type: ["txt", "pdf"]
 
